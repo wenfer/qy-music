@@ -1,0 +1,16 @@
+{
+  "id": "warm_orange",
+  "name": "暖橙怀旧",
+  "colors": {
+    "bg": "#2a1a12",
+    "fg": "#fff1e0",
+    "accent": "#ff9d4d",
+    "spectrum_low": "#7a3b12",
+    "spectrum_high": "#ffd27f"
+  },
+  "layout": {
+    "show_spectrum": true,
+    "mini_size": [320, 140],
+    "density": 1.0
+  }
+}

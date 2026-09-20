@@ -1,0 +1,72 @@
+[package]
+name = "lingfeng"
+version = "0.1.0"
+edition = "2021"
+description = "聆风 / Lingfeng — 跨平台音乐播放器 (Rust + iced)"
+license = "MIT"
+default-run = "lingfeng"
+
+[lib]
+name = "lingfeng"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lingfeng"
+path = "src/main.rs"
+
+# ── 特性 ────────────────────────────────────────────────
+# 默认启用 gui（完整 GUI：iced / tray-icon / muda / rfd）。
+# 纯逻辑（音频 DSP、LRC 解析、播放列表、频谱映射、皮肤）在
+# `cargo build --lib --no-default-features` 下即可编译与测试，
+# 无需拉取 iced 等重型 GUI 依赖。
+[features]
+default = ["gui"]
+gui = ["dep:iced", "dep:tray-icon", "dep:muda", "dep:rfd"]
+
+[dependencies]
+# ── 错误处理 ──
+thiserror = "1"
+anyhow = "1"
+
+# ── 音频解码（纯 Rust，按需开启格式）──
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "flac", "wav", "vorbis", "pcm"] }
+
+# ── 音频输出（跨平台，拉模式回调）──
+cpal = "0.15"
+
+# ── 重采样（源率 → 设备率）──
+rubato = "0.15"
+
+# ── FFT（频谱）──
+rustfft = "6.1"
+
+# ── 标签读取（列表元数据，避免整曲解码）──
+lofty = "0.21"
+
+# ── 跨线程通道（音频事件/命令/托盘事件）──
+crossbeam-channel = "0.5"
+
+# ── 序列化 / 配置持久化 ──
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5.0"
+
+# ── 编码回退（LRC GBK/GB18030）──
+encoding_rs = "0.8"
+
+# ── 随机（随机循环模式）──
+rand = "0.8"
+
+# ── 日志（调试用）──
+log = "0.4"
+env_logger = "0.11"
+
+# ── GUI 框架（MVU + 多窗口 + 自定义控件，可选）──
+iced = { version = "0.13", features = ["advanced", "canvas", "multi-window", "smol"], optional = true }
+tray-icon = { version = "0.20", optional = true }
+muda = { version = "0.16", optional = true }
+rfd = { version = "0.14", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

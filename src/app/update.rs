@@ -1,0 +1,501 @@
+//! `AppState::update` 主分发。
+//!
+//! 每个消息要么直接修改状态，要么经 [`PlaybackEngineHandle`] 下发 [`EngineCommand`]，
+//! 绝不在 UI 线程阻塞音频处理。
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use iced::{Task, window};
+use iced::window::Id as WindowId;
+
+use crate::app::message::AppMessage;
+use crate::audio::{AudioEvent, EqPreset, PlaybackState};
+use crate::config::persist;
+
+/// 音频文件扩展名（用于文件夹导入）。
+const AUDIO_EXTS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus", "wma"];
+
+impl crate::app::state::AppState {
+    /// MVU 更新入口。
+    pub fn update(&mut self, msg: AppMessage) -> Task<AppMessage> {
+        match msg {
+            // ── 播放控制 ──
+            AppMessage::TogglePlay => self.toggle_play(),
+            AppMessage::Play => self.play(),
+            AppMessage::Pause => {
+                self.engine.pause();
+                self.player.state = PlaybackState::Paused;
+                Task::none()
+            }
+            AppMessage::Next => self.advance(false),
+            AppMessage::Prev => self.advance(true),
+            AppMessage::Seek(d) => {
+                self.engine.seek(d);
+                self.player.position = d;
+                Task::none()
+            }
+            AppMessage::SetVolume(v) => {
+                let v = v.clamp(0.0, 1.0);
+                self.engine.set_volume(v);
+                self.player.volume = v;
+                self.settings.volume = v;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleMute => {
+                let m = !self.player.muted;
+                self.engine.set_muted(m);
+                self.player.muted = m;
+                Task::none()
+            }
+            AppMessage::SetLoopMode(m) => {
+                self.playlist.set_loop_mode(m);
+                Task::none()
+            }
+
+            // ── 播放列表 ──
+            AppMessage::AddFiles => self.add_files(),
+            AppMessage::AddFolder => self.add_folder(),
+            AppMessage::RemoveTrack(i) => {
+                let was_current = self.playlist.current_index == Some(i);
+                self.playlist.remove(i);
+                self.save_playlist();
+                if was_current {
+                    self.player.state = PlaybackState::Stopped;
+                }
+                Task::none()
+            }
+            AppMessage::PlayTrack(i) => {
+                self.play_index(i);
+                Task::none()
+            }
+            AppMessage::MoveTrack(from, to) => {
+                self.playlist.move_item(from, to);
+                self.save_playlist();
+                Task::none()
+            }
+            AppMessage::ClearPlaylist => {
+                self.playlist.clear();
+                self.save_playlist();
+                self.player.state = PlaybackState::Stopped;
+                Task::none()
+            }
+
+            // ── 音频事件 ──
+            AppMessage::AudioEvent(ev) => self.on_audio_event(ev),
+
+            // ── 歌词 ──
+            AppMessage::LoadLyrics(path) => {
+                if path.as_os_str().is_empty() {
+                    if let Some(file) = rfd::FileDialog::new()
+                        .add_filter("歌词", &["lrc"])
+                        .pick_file()
+                    {
+                        self.load_lyrics_file(&file);
+                    }
+                } else {
+                    self.load_lyrics_file(&path);
+                }
+                Task::none()
+            }
+            AppMessage::SetLyricOffset(ms) => {
+                self.lyric_offset_ms = ms;
+                self.settings.lyric_offset_ms = ms;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleMiniLyrics => self.toggle_mini_lyrics(),
+
+            // ── 均衡器 ──
+            AppMessage::SetEqualizerBands(bands) => {
+                self.equalizer.preset = EqPreset::Custom;
+                self.equalizer.bands = bands;
+                self.engine.set_equalizer(self.equalizer);
+                self.settings.bands = bands;
+                self.settings.eq_preset = "Custom".to_string();
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ApplyEqPreset(p) => {
+                self.equalizer.apply_preset(p);
+                self.engine.set_equalizer(self.equalizer);
+                self.settings.bands = self.equalizer.bands;
+                self.settings.eq_preset = p.to_string();
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetMasterGain(db) => {
+                self.equalizer.master_gain_db = db;
+                self.gain_clipped = self.equalizer.clamp_master_gain();
+                self.engine.set_equalizer(self.equalizer);
+                self.settings.master_gain_db = self.equalizer.master_gain_db;
+                self.save_settings();
+                Task::none()
+            }
+
+            // ── 皮肤 / 窗口 ──
+            AppMessage::SetSkin(id) => {
+                if let Some(skin) = crate::theme::Skin::builtin_by_id(&id) {
+                    self.skin = skin;
+                } else if let Some(skin) = persist::list_custom_skins()
+                    .into_iter()
+                    .find(|s| s.id == id)
+                {
+                    self.skin = skin;
+                }
+                self.settings.skin_id = id;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::EnterMiniMode => self.enter_mini_mode(),
+            AppMessage::ExitMiniMode => self.exit_mini_mode(),
+
+            // ── 托盘 ──
+            AppMessage::TrayAction(a) => match a {
+                crate::app::message::TrayAction::PlayPause => self.toggle_play(),
+                crate::app::message::TrayAction::Next => self.advance(false),
+                crate::app::message::TrayAction::Prev => self.advance(true),
+                crate::app::message::TrayAction::ShowMainWindow => self.show_main_window(),
+                crate::app::message::TrayAction::MiniMode => self.enter_mini_mode(),
+                crate::app::message::TrayAction::Quit => self.quit(),
+            },
+
+            // ── 窗口事件 ──
+            AppMessage::WindowClose(id) => self.on_window_close(id),
+            AppMessage::WindowOpened(id) => {
+                if self.main_window_id.is_none() {
+                    self.main_window_id = Some(id);
+                }
+                Task::none()
+            }
+            // ── 布局 / 持久化（增量设计 v1.1）──
+            AppMessage::SwitchMainTab(tab) => {
+                self.main_tab = tab;
+                Task::none()
+            }
+            AppMessage::ToggleEqPanel => {
+                self.eq_expanded = !self.eq_expanded;
+                Task::none()
+            }
+            AppMessage::WindowResized(id, w, h) => {
+                if self.main_window_id == Some(id) {
+                    self.settings.window_size.width = w;
+                    self.settings.window_size.height = h;
+                    self.window_size_dirty = true;
+                }
+                Task::none()
+            }
+            AppMessage::PersistTick => {
+                if self.window_size_dirty {
+                    self.window_size_dirty = false;
+                    self.save_settings();
+                }
+                Task::none()
+            }
+            AppMessage::Noop => Task::none(),
+        }
+    }
+
+    // ── 播放控制辅助 ──
+
+    fn toggle_play(&mut self) -> Task<AppMessage> {
+        match self.player.state {
+            PlaybackState::Playing => {
+                self.engine.pause();
+                self.player.state = PlaybackState::Paused;
+            }
+            PlaybackState::Paused => {
+                self.engine.resume();
+                self.player.state = PlaybackState::Playing;
+            }
+            PlaybackState::Stopped => {
+                if self.playlist.current().is_some() {
+                    if let Some(i) = self.playlist.current_index {
+                        self.play_index(i);
+                    }
+                } else if !self.playlist.tracks.is_empty() {
+                    self.play_index(0);
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn play(&mut self) -> Task<AppMessage> {
+        if self.playlist.current().is_some() {
+            if let Some(i) = self.playlist.current_index {
+                self.play_index(i);
+            }
+        } else if !self.playlist.tracks.is_empty() {
+            self.play_index(0);
+        }
+        Task::none()
+    }
+
+    fn advance(&mut self, backward: bool) -> Task<AppMessage> {
+        let next = if backward {
+            self.playlist.prev()
+        } else {
+            self.playlist.next()
+        };
+        if let Some(i) = next {
+            self.play_index(i);
+        } else if !backward {
+            // 列表播完且非循环：停止
+            self.player.state = PlaybackState::Stopped;
+        }
+        Task::none()
+    }
+
+    fn on_audio_event(&mut self, ev: AudioEvent) -> Task<AppMessage> {
+        match ev {
+            AudioEvent::Position(p, d) => {
+                self.player.position = p;
+                self.player.duration = d;
+            }
+            AudioEvent::Spectrum(sd) => {
+                if self.player.state == PlaybackState::Playing && !self.player.muted {
+                    self.spectrum = sd;
+                } else {
+                    self.spectrum.zero();
+                }
+            }
+            AudioEvent::Ended => {
+                if let Some(i) = self.playlist.next() {
+                    self.play_index(i);
+                } else {
+                    self.player.state = PlaybackState::Stopped;
+                    self.player.position = Duration::ZERO;
+                }
+            }
+            AudioEvent::Error(e) => {
+                self.last_error = Some(e);
+                log::error!("音频错误: {}", self.last_error.as_deref().unwrap_or(""));
+            }
+        }
+        Task::none()
+    }
+
+    // ── 列表辅助 ──
+
+    fn add_files(&mut self) -> Task<AppMessage> {
+        if let Some(files) = rfd::FileDialog::new()
+            .add_filter("音频", &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"])
+            .pick_files()
+        {
+            for f in files {
+                self.playlist.add(f);
+            }
+            self.save_playlist();
+        }
+        Task::none()
+    }
+
+    fn add_folder(&mut self) -> Task<AppMessage> {
+        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+            let files = collect_audio_files(&dir);
+            for f in files {
+                self.playlist.add(f);
+            }
+            self.save_playlist();
+        }
+        Task::none()
+    }
+
+    // ── 歌词辅助 ──
+
+    fn toggle_mini_lyrics(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.mini_lyrics_id {
+            self.mini_lyrics_id = None;
+            window::close(id)
+        } else {
+            let (id, task) = window::open(window::Settings {
+                size: iced::Size::new(360.0, 120.0),
+                resizable: false,
+                transparent: true,
+                decorations: true,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            self.mini_lyrics_id = Some(id);
+            task.map(|_| AppMessage::Noop)
+        }
+    }
+
+    // ── 均衡器 / 皮肤辅助见 update 主分发 ──
+
+    // ── 窗口辅助 ──
+
+    fn enter_mini_mode(&mut self) -> Task<AppMessage> {
+        if self.mini_window_id.is_none() {
+            let (w, h) = self.skin.layout.mini_size;
+            let (id, task) = window::open(window::Settings {
+                size: iced::Size::new(w as f32, h as f32),
+                resizable: false,
+                decorations: true,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            self.mini_window_id = Some(id);
+            return task.map(|_| AppMessage::Noop);
+        }
+        Task::none()
+    }
+
+    fn exit_mini_mode(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.mini_window_id {
+            self.mini_window_id = None;
+            return window::close(id);
+        }
+        Task::none()
+    }
+
+    fn show_main_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.main_window_id {
+            // 取消隐藏（恢复常规窗口模式）
+            window::change_mode(id, window::Mode::Windowed)
+        } else {
+            // 主窗口已被销毁：重新打开（尺寸取持久化值，T11）
+            let (id, task) = window::open(crate::app::main_window_settings((
+                self.settings.window_size.width,
+                self.settings.window_size.height,
+            )));
+            self.main_window_id = Some(id);
+            task.map(|_| AppMessage::Noop)
+        }
+    }
+
+    fn quit(&mut self) -> Task<AppMessage> {
+        // 退出前强制落盘（窗口尺寸等，T11）
+        self.window_size_dirty = false;
+        self.save_settings();
+        // daemon 常驻：显式请求退出进程
+        iced::exit()
+    }
+
+    fn on_window_close(&mut self, id: WindowId) -> Task<AppMessage> {
+        if self.mini_window_id == Some(id) {
+            self.mini_window_id = None;
+            return window::close(id);
+        }
+        if self.mini_lyrics_id == Some(id) {
+            self.mini_lyrics_id = None;
+            return window::close(id);
+        }
+        // 主窗口关闭请求：最小化到托盘（隐藏）或直接退出进程
+        self.main_window_id = Some(id);
+        if self.settings.close_to_tray {
+            // 强制落盘窗口尺寸（T11），再隐藏（托盘「显示主窗口」可再次恢复）
+            self.window_size_dirty = false;
+            self.save_settings();
+            window::change_mode(id, window::Mode::Hidden)
+        } else {
+            self.window_size_dirty = false;
+            self.save_settings();
+            iced::exit()
+        }
+    }
+}
+
+/// 递归收集目录下所有音频文件。
+fn collect_audio_files(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                out.extend(collect_audio_files(&path));
+            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if AUDIO_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 时间格式化 `mm:ss`（供 UI 复用）。
+pub fn format_duration(d: Duration) -> String {
+    let total = d.as_secs();
+    let m = total / 60;
+    let s = total % 60;
+    format!("{m:02}:{s:02}")
+}
+
+// 让 UI 直接引用循环模式枚举
+pub use crate::playlist::LoopMode as _LoopModeAlias;
+
+#[cfg(test)]
+mod tests {
+    use super::format_duration;
+    use std::time::Duration;
+
+    use super::AppMessage;
+    use crate::app::message::MainTab;
+    use crate::app::state::AppState;
+
+    #[test]
+    fn format_duration_zero() {
+        assert_eq!(format_duration(Duration::ZERO), "00:00");
+    }
+
+    #[test]
+    fn format_duration_pads_seconds() {
+        assert_eq!(format_duration(Duration::from_secs(65)), "01:05");
+        assert_eq!(format_duration(Duration::from_secs(9)), "00:09");
+    }
+
+    #[test]
+    fn format_duration_over_one_hour_still_minutes() {
+        // 超过 1 小时仍以「总分钟:秒」表示（与千千静听风格一致）。
+        assert_eq!(format_duration(Duration::from_secs(3661)), "61:01");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 增量设计 v1.1：Tab 切换（T13）/ EQ 折叠（T14）/ 窗口尺寸（T11）
+    // ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn main_tab_defaults_to_playlist_and_switches() {
+        assert_eq!(MainTab::default(), MainTab::Playlist);
+        let mut state = AppState::default();
+        assert_eq!(state.main_tab, MainTab::Playlist);
+        let _ = state.update(AppMessage::SwitchMainTab(MainTab::Lyrics));
+        assert_eq!(state.main_tab, MainTab::Lyrics);
+        let _ = state.update(AppMessage::SwitchMainTab(MainTab::Playlist));
+        assert_eq!(state.main_tab, MainTab::Playlist);
+    }
+
+    #[test]
+    fn eq_panel_toggles_collapsed_by_default() {
+        let mut state = AppState::default();
+        assert!(!state.eq_expanded, "EQ 面板默认收起");
+        let _ = state.update(AppMessage::ToggleEqPanel);
+        assert!(state.eq_expanded);
+        let _ = state.update(AppMessage::ToggleEqPanel);
+        assert!(!state.eq_expanded);
+    }
+
+    #[test]
+    fn window_resize_marks_dirty_and_tick_flushes() {
+        let mut state = AppState::default();
+        let id = state.main_window_id.expect("new() 应记录主窗口 id");
+        let _ = state.update(AppMessage::WindowResized(id, 360.0, 600.0));
+        assert!(state.window_size_dirty);
+        assert_eq!(state.settings.window_size.width, 360.0);
+        assert_eq!(state.settings.window_size.height, 600.0);
+        // 1s tick 落盘后清除脏标记
+        let _ = state.update(AppMessage::PersistTick);
+        assert!(!state.window_size_dirty);
+        // 非主窗口的 resize 不影响持久化尺寸
+        let _ = state.update(AppMessage::WindowResized(
+            iced::window::Id::unique(),
+            100.0,
+            100.0,
+        ));
+        assert!(!state.window_size_dirty);
+        assert_eq!(state.settings.window_size.width, 360.0);
+    }
+}

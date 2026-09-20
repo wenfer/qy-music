@@ -1,0 +1,16 @@
+{
+  "id": "classic_dark",
+  "name": "墨蓝经典",
+  "colors": {
+    "bg": "#0f1424",
+    "fg": "#e6ecff",
+    "accent": "#4f8cff",
+    "spectrum_low": "#1b3a8f",
+    "spectrum_high": "#5fd0ff"
+  },
+  "layout": {
+    "show_spectrum": true,
+    "mini_size": [320, 140],
+    "density": 1.0
+  }
+}
