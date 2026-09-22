@@ -57,7 +57,8 @@ jobs:
             pkg-config \
             libasound2-dev \
             libgtk-3-dev \
-            libayatana-appindicator3-dev
+            libayatana-appindicator3-dev \
+            libxdo-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
