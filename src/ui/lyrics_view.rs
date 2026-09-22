@@ -45,7 +45,7 @@ pub fn lyrics_view(state: &AppState) -> Element<'_, AppMessage> {
     let offset_slider = slider(-2000.0..=2000.0, state.lyric_offset_ms as f32, |v| {
         AppMessage::SetLyricOffset(v as i64)
     })
-    .step(10.0)
+    .step(10.0_f32)
     .width(Length::Fill)
     .style(hifi_slider_style(palette));
 

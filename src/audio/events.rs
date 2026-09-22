@@ -10,6 +10,19 @@ use crate::audio::equalizer::Equalizer;
 use crate::playlist::Track;
 use crate::visualizer::spectrum::SpectrumData;
 
+/// 实时音频格式与信号链规格信息。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct AudioFormatInfo {
+    /// 音频源采样率 (Hz)。
+    pub sample_rate: u32,
+    /// 音频源声道数。
+    pub channels: u16,
+    /// 声卡硬件输出采样率 (Hz)。
+    pub device_rate: u32,
+    /// 是否为 Hi-Res 高解析度音源（>= 48kHz）。
+    pub is_hi_res: bool,
+}
+
 /// 音频引擎回传给 UI 的事件。
 ///
 /// 由 cpal 回调线程 / 解码线程产生，经 `crossbeam` 通道与 iced `Subscription` 转成
@@ -20,6 +33,8 @@ pub enum AudioEvent {
     Position(Duration, Duration),
     /// 一帧频谱数据。
     Spectrum(SpectrumData),
+    /// 音频规格与信号链信息。
+    Format(AudioFormatInfo),
     /// 当前曲目播放结束。
     Ended,
     /// 音频线程发生错误（描述）。

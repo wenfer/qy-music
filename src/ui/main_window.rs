@@ -59,6 +59,18 @@ fn build_header(state: &AppState) -> Element<'_, AppMessage> {
     .text_size(11.0)
     .style(hifi_pick_list_style(palette));
 
+    let effects_btn = button(
+        text(if state.effects_window_id.is_some() {
+            "◈ 音效"
+        } else {
+            "音效"
+        })
+        .size(11.0),
+    )
+    .padding([3, 7])
+    .style(subtle_button_style(palette))
+    .on_press(AppMessage::OpenEffectsWindow);
+
     let mini_lyrics_btn = button(text("歌词").size(11.0))
         .padding([3, 7])
         .style(subtle_button_style(palette))
@@ -69,11 +81,17 @@ fn build_header(state: &AppState) -> Element<'_, AppMessage> {
         .style(subtle_button_style(palette))
         .on_press(AppMessage::EnterMiniMode);
 
-    row![skin_picker, space::horizontal(), mini_lyrics_btn, mini_btn,]
-        .spacing(5)
-        .align_y(iced::alignment::Vertical::Center)
-        .width(Length::Fill)
-        .into()
+    row![
+        skin_picker,
+        space::horizontal(),
+        effects_btn,
+        mini_lyrics_btn,
+        mini_btn,
+    ]
+    .spacing(5)
+    .align_y(iced::alignment::Vertical::Center)
+    .width(Length::Fill)
+    .into()
 }
 
 /// ② 当前曲目：纯净展示歌曲与歌手，未播放时仅居中显示“未播放”。

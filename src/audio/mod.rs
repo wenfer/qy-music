@@ -12,14 +12,16 @@ pub mod engine;
 pub mod equalizer;
 pub mod events;
 pub mod output;
+pub mod preset;
 pub mod resampler;
 
 pub use decoder::SymphoniaDecoder;
 pub use dsp::{Biquad, BiquadCoeff, DspChain};
 pub use effects::{AudioEffects, AudioEffectsProcessor};
 pub use engine::{PlaybackEngine, PlaybackEngineHandle};
-pub use equalizer::{EqPreset, Equalizer};
+pub use equalizer::{EqPreset, Equalizer, EQ_BAND_FREQS, EQ_BAND_LABELS};
 pub use events::{AudioEvent, EngineCommand};
+pub use preset::SoundPreset;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;

@@ -90,9 +90,7 @@ impl SpectrumData {
 
     /// 全部归零（暂停 / 静音时调用）。
     pub fn zero(&mut self) {
-        for b in &mut self.bands {
-            *b = 0.0;
-        }
+        self.bands.fill(0.0);
     }
 }
 

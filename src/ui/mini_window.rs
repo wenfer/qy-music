@@ -159,7 +159,7 @@ pub fn mini_mode_view(state: &AppState) -> Element<'_, AppMessage> {
         .style(lcd_display_style(palette));
 
     let vol_slider = iced::widget::slider(0.0..=1.0, state.player.volume, AppMessage::SetVolume)
-        .step(0.02)
+        .step(0.02_f32)
         .width(Length::Fixed(80.0))
         .style(crate::ui::style::hifi_slider_style(palette));
 

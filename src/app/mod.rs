@@ -43,7 +43,13 @@ pub fn run() -> iced::Result {
     // Renderer 共享）都用该族渲染。托盘菜单 / 文件对话框为 OS 原生渲染，
     // 由系统字体负责。
     iced::daemon(AppState::new, AppState::update, AppState::view)
-        .title(|state: &AppState, _window: iced::window::Id| {
+        .title(|state: &AppState, window: iced::window::Id| {
+            if Some(window) == state.effects_window_id {
+                return "聆风 - 音效控制台 & 均衡器 (DSP Console)".to_string();
+            }
+            if Some(window) == state.mini_lyrics_id {
+                return "聆风 - 桌面歌词".to_string();
+            }
             state
                 .current_track()
                 .map(|t| t.display_name())

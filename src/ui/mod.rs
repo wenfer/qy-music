@@ -2,6 +2,7 @@
 //! 迷你歌词窗口。所有控件经 [`AppMessage`] 上报，绝不直接修改状态。
 
 pub mod controls;
+pub mod effects_console;
 pub mod equalizer_view;
 pub mod lyrics_view;
 pub mod main_window;
@@ -17,13 +18,16 @@ use iced::Element;
 
 /// 主视图入口：依据窗口 id 渲染不同窗口内容。
 impl AppState {
-    /// MVU 视图：根据窗口 id 渲染主窗口 / 迷你模式 / 迷你歌词。
+    /// MVU 视图：根据窗口 id 渲染主窗口 / 迷你模式 / 迷你歌词 / 独立音效控制台。
     pub fn view(&self, window: iced::window::Id) -> Element<'_, AppMessage> {
         if Some(window) == self.mini_window_id {
             return crate::ui::mini_window::mini_mode_view(self);
         }
         if Some(window) == self.mini_lyrics_id {
             return crate::ui::lyrics_view::mini_lyrics_view(self);
+        }
+        if Some(window) == self.effects_window_id {
+            return crate::ui::effects_console::effects_console_view(self);
         }
         crate::ui::main_window::main_view(self)
     }

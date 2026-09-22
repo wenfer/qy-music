@@ -70,6 +70,33 @@ impl BiquadCoeff {
             a2: a2 / a0,
         }
     }
+
+    /// 构造 RBJ 二阶低通（Lowpass）滤波器系数。
+    ///
+    /// 用于双耳跨耳互馈（头影效应高频衰减）等声学模拟。
+    pub fn lowpass(f0: f32, fs: f32, q: f32) -> Self {
+        debug_assert!(f0 > 0.0 && f0 < fs / 2.0, "截止频率必须落在 (0, fs/2)");
+        debug_assert!(q > 0.0, "Q 必须为正");
+
+        let w0 = 2.0 * std::f32::consts::PI * f0 / fs;
+        let cos_w0 = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 = (1.0 - cos_w0) * 0.5;
+        let b1 = 1.0 - cos_w0;
+        let b2 = (1.0 - cos_w0) * 0.5;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha;
+
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
 }
 
 /// 单个 Biquad 滤波器（含延迟状态）。
@@ -189,8 +216,13 @@ impl DspChain {
 
     /// 处理一帧（交错 `f32`，默认立体声）并返回处理后的帧。
     ///
-    /// 流程：Biquad EQ -> 主增益 -> DSP 音效 (3D/低音/人声) -> 软限幅抗爆音。
+    /// 流程：Hi-Fi 纯净直通检查 -> Biquad EQ -> 主增益 -> DSP 音效 (全景/胆机/低音/人声) -> 软限幅抗爆音。
     pub fn process(&mut self, frame: &[f32]) -> Vec<f32> {
+        if self.effects.pure_direct {
+            // Hi-Fi 纯净直通：绕过全部 EQ 与 DSP 染色，原样比特完美直通输出
+            return frame.to_vec();
+        }
+
         let n_ch = self.channels;
         let n_bands = if self.filters.is_empty() {
             0
@@ -446,5 +478,31 @@ mod tests {
         let mut chain = DspChain::from_equalizer(&eq, 44_100.0);
         assert!(chain.process(&[]).is_empty());
         assert_eq!(chain.filters.len(), 20, "立体声 2 × 10 段");
+    }
+
+    #[test]
+    fn biquad_lowpass_attenuates_high_frequencies() {
+        let fs = 48000.0;
+        let f0 = 1600.0;
+        let q = std::f32::consts::FRAC_1_SQRT_2;
+        let coeff = BiquadCoeff::lowpass(f0, fs, q);
+
+        // 低频通带 (100Hz) 幅度应接近 1.0 (0 dB)
+        let w_low = 2.0 * std::f32::consts::PI * 100.0 / fs;
+        let mag_low = biquad_mag(&coeff, w_low);
+        assert!((mag_low - 1.0).abs() < 0.05, "通带增益接近 1.0");
+
+        // 截止频率处 (1600Hz) 幅度约为 -3dB (1 / sqrt(2))
+        let w_cutoff = 2.0 * std::f32::consts::PI * f0 / fs;
+        let mag_cutoff = biquad_mag(&coeff, w_cutoff);
+        assert!(
+            (mag_cutoff - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.05,
+            "截止点约 -3dB"
+        );
+
+        // 高频阻带 (16000Hz) 深度衰减
+        let w_high = 2.0 * std::f32::consts::PI * 16000.0 / fs;
+        let mag_high = biquad_mag(&coeff, w_high);
+        assert!(mag_high < 0.05, "高频阻带显著衰减");
     }
 }

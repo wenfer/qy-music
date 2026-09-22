@@ -2,7 +2,7 @@
 //!
 //! 提供基于 [`Skin`] 动态计算的高级色彩 Token 与现代组件样式。
 
-use iced::widget::{button, container, pick_list, scrollable, slider};
+use iced::widget::{button, container, pick_list, scrollable, slider, text_input};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 use crate::theme::hex_to_rgb;
@@ -505,5 +505,31 @@ pub fn hifi_scrollable_style(
         style.horizontal_rail.background = Some(Background::Color(Color::TRANSPARENT));
         style.horizontal_rail.border = Border::default();
         style
+    }
+}
+
+/// Hi-Fi 风格文本输入框样式（暗雅通透背景，极细轮廓）。
+pub fn hifi_text_input_style(
+    palette: Palette,
+) -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
+    move |_theme, status| {
+        let border_color = match status {
+            text_input::Status::Focused { .. } => palette.accent,
+            text_input::Status::Hovered => palette.border,
+            text_input::Status::Disabled => palette.border_subtle,
+            text_input::Status::Active => palette.border,
+        };
+        text_input::Style {
+            background: Background::Color(palette.lcd_bg),
+            border: Border {
+                color: border_color,
+                width: 1.0,
+                radius: 5.0.into(),
+            },
+            icon: palette.text_muted,
+            placeholder: palette.text_muted,
+            value: palette.text_main,
+            selection: palette.accent_subtle,
+        }
     }
 }

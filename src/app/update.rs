@@ -26,7 +26,7 @@ impl crate::app::state::AppState {
             AppMessage::Pause => {
                 self.engine.pause();
                 self.player.state = PlaybackState::Paused;
-                self.spectrum.zero();
+                // 不立即 self.spectrum.zero()，让频谱随音频 500ms 渐出缓冲自然平滑回落
                 Task::none()
             }
             AppMessage::Next => self.advance(false),
@@ -136,15 +136,50 @@ impl crate::app::state::AppState {
             }
 
             // ── DSP 音效增强 ──
-            AppMessage::ToggleStereoWidener => {
-                self.effects.stereo_widener_enabled = !self.effects.stereo_widener_enabled;
+            AppMessage::TogglePureDirect => {
+                self.effects.pure_direct = !self.effects.pure_direct;
                 self.engine.set_audio_effects(self.effects);
                 self.settings.effects = self.effects;
                 self.save_settings();
                 Task::none()
             }
-            AppMessage::SetStereoWidenerLevel(lvl) => {
-                self.effects.stereo_widener_level = lvl.clamp(0.0, 1.0);
+            AppMessage::ToggleTubeWarmth => {
+                self.effects.tube_warmth_enabled = !self.effects.tube_warmth_enabled;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetTubeWarmthLevel(lvl) => {
+                self.effects.tube_warmth_level = lvl.clamp(0.0, 1.0);
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleBs2bMode => {
+                self.effects.bs2b_mode = !self.effects.bs2b_mode;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleSpatialAudio | AppMessage::ToggleStereoWidener => {
+                self.effects.spatial_audio_enabled = !self.effects.spatial_audio_enabled;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetSpatialAudioLevel(lvl) | AppMessage::SetStereoWidenerLevel(lvl) => {
+                self.effects.spatial_audio_level = lvl.clamp(0.0, 1.0);
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetDialogueClarityLevel(lvl) => {
+                self.effects.dialogue_clarity_level = lvl.clamp(0.0, 1.0);
                 self.engine.set_audio_effects(self.effects);
                 self.settings.effects = self.effects;
                 self.save_settings();
@@ -223,6 +258,63 @@ impl crate::app::state::AppState {
                 self.eq_expanded = !self.eq_expanded;
                 Task::none()
             }
+            AppMessage::OpenEffectsWindow => self.open_effects_window(),
+            AppMessage::ToggleEffectsWindow => self.toggle_effects_window(),
+            AppMessage::CloseEffectsWindow => self.close_effects_window(),
+            AppMessage::ResetAllEffects => self.reset_all_effects(),
+            AppMessage::SelectSoundPreset(id) => {
+                self.apply_sound_preset_by_id(&id);
+                Task::none()
+            }
+            AppMessage::SetPresetNameInput(name) => {
+                self.preset_name_input = name;
+                Task::none()
+            }
+            AppMessage::SaveCurrentAsNewPreset => {
+                let name = if self.preset_name_input.trim().is_empty() {
+                    format!("自定义音效 {}", self.custom_presets.len() + 1)
+                } else {
+                    self.preset_name_input.trim().to_string()
+                };
+                let preset = crate::audio::SoundPreset::new_custom(
+                    name,
+                    self.equalizer.bands,
+                    self.equalizer.master_gain_db,
+                    self.effects,
+                );
+                self.active_preset_id = preset.id.clone();
+                self.custom_presets.push(preset);
+                self.settings.custom_presets = self.custom_presets.clone();
+                self.settings.active_preset_id = self.active_preset_id.clone();
+                self.preset_name_input.clear();
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SaveActivePreset => {
+                if let Some(pos) = self
+                    .custom_presets
+                    .iter()
+                    .position(|p| p.id == self.active_preset_id)
+                {
+                    self.custom_presets[pos].bands = self.equalizer.bands;
+                    self.custom_presets[pos].master_gain_db = self.equalizer.master_gain_db;
+                    self.custom_presets[pos].effects = self.effects;
+                    self.settings.custom_presets = self.custom_presets.clone();
+                    self.save_settings();
+                }
+                Task::none()
+            }
+            AppMessage::DeletePreset(id) => {
+                self.custom_presets.retain(|p| p.id != id);
+                if self.active_preset_id == id {
+                    self.apply_sound_preset_by_id("builtin_flat");
+                }
+                self.settings.custom_presets = self.custom_presets.clone();
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ExportPreset => self.export_active_preset(),
+            AppMessage::ImportPreset => self.import_preset(),
             AppMessage::WindowResized(id, w, h) => {
                 if self.main_window_id == Some(id) && w >= 100.0 && h >= 100.0 {
                     self.settings.window_size.width = w;
@@ -249,7 +341,7 @@ impl crate::app::state::AppState {
             PlaybackState::Playing => {
                 self.engine.pause();
                 self.player.state = PlaybackState::Paused;
-                self.spectrum.zero();
+                // 不立即 self.spectrum.zero()，让频谱随音频 500ms 渐出自然平滑回落
             }
             PlaybackState::Paused => {
                 self.engine.resume();
@@ -301,7 +393,7 @@ impl crate::app::state::AppState {
                 self.player.duration = d;
             }
             AudioEvent::Spectrum(mut sd) => {
-                if self.player.state == PlaybackState::Playing && !self.player.muted {
+                if self.player.state != PlaybackState::Stopped && !self.player.muted {
                     // 双阶阻尼平滑律动（Classic Winamp / 千千静听 经典手感）：
                     // 升起时稳健追随（Attack: 0.28），平滑消除高频毛刺与抽搐跳跃；
                     // 跌落时模拟机械重力恒速滑落（Decay: 0.038/frame @ 15FPS），如羽毛般温润沉浮
@@ -318,6 +410,9 @@ impl crate::app::state::AppState {
                 } else {
                     self.spectrum.zero();
                 }
+            }
+            AudioEvent::Format(info) => {
+                self.format_info = Some(info);
             }
             AudioEvent::Ended => {
                 if let Some(i) = self.playlist.next() {
@@ -466,6 +561,10 @@ impl crate::app::state::AppState {
             self.mini_lyrics_id = None;
             return window::close(id);
         }
+        if self.effects_window_id == Some(id) {
+            self.effects_window_id = None;
+            return window::close(id);
+        }
         // 主窗口关闭请求：最小化到托盘（隐藏）或直接退出进程
         self.main_window_id = Some(id);
         if self.settings.close_to_tray {
@@ -478,6 +577,109 @@ impl crate::app::state::AppState {
             self.save_settings();
             iced::exit()
         }
+    }
+
+    fn open_effects_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.effects_window_id {
+            window::gain_focus(id)
+        } else {
+            let (id, task) = window::open(window::Settings {
+                size: iced::Size::new(580.0, 580.0),
+                min_size: Some(iced::Size::new(500.0, 480.0)),
+                resizable: true,
+                decorations: true,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            self.effects_window_id = Some(id);
+            Task::batch([task.map(|_| AppMessage::Noop), window::gain_focus(id)])
+        }
+    }
+
+    fn toggle_effects_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.effects_window_id {
+            self.effects_window_id = None;
+            window::close(id)
+        } else {
+            self.open_effects_window()
+        }
+    }
+
+    fn close_effects_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.effects_window_id.take() {
+            window::close(id)
+        } else {
+            Task::none()
+        }
+    }
+
+    fn reset_all_effects(&mut self) -> Task<AppMessage> {
+        self.equalizer.preset = EqPreset::Flat;
+        self.equalizer.bands = [0.0; 10];
+        self.equalizer.master_gain_db = 0.0;
+        self.engine.set_equalizer(self.equalizer);
+        self.settings.eq_preset = self.equalizer.preset.to_string();
+        self.settings.bands = self.equalizer.bands;
+        self.settings.master_gain_db = self.equalizer.master_gain_db;
+
+        self.effects = crate::audio::AudioEffects::default();
+        self.engine.set_audio_effects(self.effects);
+        self.settings.effects = self.effects;
+
+        self.save_settings();
+        Task::none()
+    }
+
+    fn export_active_preset(&mut self) -> Task<AppMessage> {
+        let preset = self.active_preset().unwrap_or_else(|| {
+            crate::audio::SoundPreset::new_custom(
+                "当前音效参数",
+                self.equalizer.bands,
+                self.equalizer.master_gain_db,
+                self.effects,
+            )
+        });
+        let filename = format!("{}.json", preset.name.replace(['/', '\\'], "_"));
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("音效预设 (*.json)", &["json"])
+            .set_file_name(&filename)
+            .save_file()
+        {
+            if let Ok(json) = preset.to_json() {
+                if let Err(e) = std::fs::write(&path, json) {
+                    log::error!("导出预设失败: {e}");
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn import_preset(&mut self) -> Task<AppMessage> {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("音效预设 (*.json)", &["json"])
+            .pick_file()
+        {
+            match std::fs::read_to_string(&path) {
+                Ok(text) => match crate::audio::SoundPreset::from_json(&text) {
+                    Ok(mut preset) => {
+                        // 确保 ID 唯一
+                        if self.custom_presets.iter().any(|p| p.id == preset.id) {
+                            let ts = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis())
+                                .unwrap_or(0);
+                            preset.id = format!("custom_{ts}");
+                        }
+                        self.custom_presets.push(preset.clone());
+                        self.settings.custom_presets = self.custom_presets.clone();
+                        self.apply_sound_preset(&preset);
+                    }
+                    Err(e) => log::warn!("预设文件解析失败: {e}"),
+                },
+                Err(e) => log::warn!("读取预设文件失败: {e}"),
+            }
+        }
+        Task::none()
     }
 }
 
@@ -610,5 +812,85 @@ mod tests {
         let _ = state.update(AppMessage::WindowClose(mini_id));
         assert!(!state.settings.mini_mode);
         assert!(state.mini_window_id.is_none());
+    }
+
+    #[test]
+    fn effects_window_open_toggle_close_lifecycle() {
+        let mut state = AppState::default();
+        assert!(state.effects_window_id.is_none());
+
+        // 打开控制台窗口
+        let _ = state.update(AppMessage::OpenEffectsWindow);
+        assert!(state.effects_window_id.is_some());
+        let effects_id = state.effects_window_id.unwrap();
+
+        // 再次调用 OpenEffectsWindow 保持原 id
+        let _ = state.update(AppMessage::OpenEffectsWindow);
+        assert_eq!(state.effects_window_id, Some(effects_id));
+
+        // Toggle 关闭
+        let _ = state.update(AppMessage::ToggleEffectsWindow);
+        assert!(state.effects_window_id.is_none());
+
+        // Toggle 再次打开
+        let _ = state.update(AppMessage::ToggleEffectsWindow);
+        assert!(state.effects_window_id.is_some());
+        let new_effects_id = state.effects_window_id.unwrap();
+
+        // CloseRequested / WindowClose 关闭
+        let _ = state.update(AppMessage::WindowClose(new_effects_id));
+        assert!(state.effects_window_id.is_none());
+    }
+
+    #[test]
+    fn reset_all_effects_clears_dsp_and_eq() {
+        let mut state = AppState::default();
+        state.effects.pure_direct = true;
+        state.effects.tube_warmth_enabled = true;
+        state.effects.spatial_audio_enabled = true;
+        state.equalizer.master_gain_db = 3.5;
+        state.equalizer.bands[0] = 5.0;
+
+        let _ = state.update(AppMessage::ResetAllEffects);
+
+        assert!(!state.effects.pure_direct);
+        assert!(!state.effects.tube_warmth_enabled);
+        assert!(!state.effects.spatial_audio_enabled);
+        assert_eq!(state.equalizer.master_gain_db, 0.0);
+        assert_eq!(state.equalizer.bands[0], 0.0);
+    }
+
+    #[test]
+    fn sound_preset_crud_operations() {
+        let mut state = AppState::default();
+        let initial_count = state.all_presets().len();
+        assert!(initial_count >= 12);
+
+        // 1. 切换内置预设
+        let _ = state.update(AppMessage::SelectSoundPreset("builtin_rock".to_string()));
+        assert_eq!(state.active_preset_id, "builtin_rock");
+        assert!(state.effects.bass_boost_enabled);
+
+        // 2. 添加自定义预设
+        let _ = state.update(AppMessage::SetPresetNameInput("我的监听大耳".to_string()));
+        state.equalizer.master_gain_db = 2.0;
+        state.effects.tube_warmth_enabled = true;
+        let _ = state.update(AppMessage::SaveCurrentAsNewPreset);
+
+        assert_eq!(state.custom_presets.len(), 1);
+        let custom_id = state.custom_presets[0].id.clone();
+        assert_eq!(state.custom_presets[0].name, "我的监听大耳");
+        assert_eq!(state.active_preset_id, custom_id);
+        assert_eq!(state.all_presets().len(), initial_count + 1);
+
+        // 3. 编辑并保存当前自定义预设
+        state.equalizer.master_gain_db = 3.0;
+        let _ = state.update(AppMessage::SaveActivePreset);
+        assert_eq!(state.custom_presets[0].master_gain_db, 3.0);
+
+        // 4. 删除自定义预设
+        let _ = state.update(AppMessage::DeletePreset(custom_id));
+        assert_eq!(state.custom_presets.len(), 0);
+        assert_eq!(state.active_preset_id, "builtin_flat");
     }
 }

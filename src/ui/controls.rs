@@ -46,7 +46,7 @@ pub fn progress_row(state: &AppState) -> Element<'_, AppMessage> {
     let seek_slider = slider(0.0..=total_secs.max(0.01), pos.as_secs_f32(), |v| {
         AppMessage::Seek(Duration::from_secs_f32(v))
     })
-    .step(0.1)
+    .step(0.1_f32)
     .width(Length::Fill)
     .style(hifi_slider_style(palette));
 
@@ -173,7 +173,7 @@ pub fn volume_row(state: &AppState) -> Element<'_, AppMessage> {
     .on_press(AppMessage::ToggleMute);
 
     let vol_slider = slider(0.0..=1.0, state.player.volume, AppMessage::SetVolume)
-        .step(0.01)
+        .step(0.01_f32)
         .width(Length::Fill)
         .style(hifi_slider_style(palette));
 

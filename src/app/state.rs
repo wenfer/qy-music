@@ -42,6 +42,8 @@ pub struct AppState {
     pub mini_window_id: Option<WindowId>,
     /// 迷你歌词窗口 id。
     pub mini_lyrics_id: Option<WindowId>,
+    /// 独立音效控制台窗口 id。
+    pub effects_window_id: Option<WindowId>,
     /// 引擎命令句柄（轻量，可克隆）。
     pub engine: Arc<PlaybackEngineHandle>,
 
@@ -58,8 +60,16 @@ pub struct AppState {
     pub main_tab: crate::app::message::MainTab,
     /// 均衡器面板是否展开（T14，默认收起）。
     pub eq_expanded: bool,
-    /// DSP 音效增强配置 (3D拓宽/低音/人声通透)。
+    /// DSP 音效增强配置 (全景/胆机/低音/人声/纯净直通)。
     pub effects: crate::audio::AudioEffects,
+    /// 用户自定义音效预设列表。
+    pub custom_presets: Vec<crate::audio::SoundPreset>,
+    /// 当前激活的音效预设 ID。
+    pub active_preset_id: String,
+    /// 音效控制台中新预设名称输入框内容。
+    pub preset_name_input: String,
+    /// 实时音频格式与信号链规格信息 (采样率, 设备采样率, 是否 Hi-Res 等)。
+    pub format_info: Option<crate::audio::events::AudioFormatInfo>,
     /// 窗口尺寸是否有待落盘的变更（T11，1s tick 落盘）。
     pub(crate) window_size_dirty: bool,
 }
@@ -149,9 +159,9 @@ impl AppState {
             lyric_offset_ms: settings.lyric_offset_ms,
             spectrum: SpectrumData::silent(32, 16),
             skin,
-            settings,
             mini_window_id,
             mini_lyrics_id: None,
+            effects_window_id: None,
             engine: Arc::new(handle),
             main_window_id: Some(main_window_id),
             _engine: engine,
@@ -160,6 +170,11 @@ impl AppState {
             main_tab: crate::app::message::MainTab::default(),
             eq_expanded: false,
             effects,
+            custom_presets: settings.custom_presets.clone(),
+            active_preset_id: settings.active_preset_id.clone(),
+            preset_name_input: String::new(),
+            settings,
+            format_info: None,
             window_size_dirty: false,
         };
         let mut tasks = vec![open_task.map(|_| AppMessage::Noop)];
@@ -233,6 +248,47 @@ impl AppState {
     /// 主增益是否触发削波告警。
     pub fn gain_clipped(&self) -> bool {
         self.gain_clipped
+    }
+
+    /// 获取全部音效预设列表（内置经典预设 + 用户自定义预设）。
+    pub fn all_presets(&self) -> Vec<crate::audio::SoundPreset> {
+        let mut list = crate::audio::SoundPreset::builtin_presets();
+        list.extend(self.custom_presets.clone());
+        list
+    }
+
+    /// 获取当前激活的音效预设。
+    pub fn active_preset(&self) -> Option<crate::audio::SoundPreset> {
+        self.all_presets()
+            .into_iter()
+            .find(|p| p.id == self.active_preset_id)
+    }
+
+    /// 应用音效预设（更新 EQ、DSP、引擎并持久化）。
+    pub fn apply_sound_preset(&mut self, preset: &crate::audio::SoundPreset) {
+        self.equalizer.bands = preset.bands;
+        self.equalizer.master_gain_db = preset.master_gain_db;
+        self.equalizer.preset = crate::audio::EqPreset::from_str(&preset.name)
+            .unwrap_or(crate::audio::EqPreset::Custom);
+        self.engine.set_equalizer(self.equalizer);
+        self.settings.bands = self.equalizer.bands;
+        self.settings.master_gain_db = self.equalizer.master_gain_db;
+        self.settings.eq_preset = self.equalizer.preset.to_string();
+
+        self.effects = preset.effects;
+        self.engine.set_audio_effects(self.effects);
+        self.settings.effects = self.effects;
+
+        self.active_preset_id = preset.id.clone();
+        self.settings.active_preset_id = preset.id.clone();
+        self.save_settings();
+    }
+
+    /// 根据预设 ID 查找并应用预设。
+    pub fn apply_sound_preset_by_id(&mut self, id: &str) {
+        if let Some(p) = self.all_presets().into_iter().find(|p| p.id == id) {
+            self.apply_sound_preset(&p);
+        }
     }
 }
 

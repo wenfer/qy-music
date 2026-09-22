@@ -22,18 +22,30 @@ pub enum EqPreset {
     Classical,
     /// 人声。
     Vocal,
+    /// 哈曼参考曲线（发烧监听参考目标）。
+    Harman,
+    /// 森海塞尔 HD600 / HD650 校准。
+    Hd600,
+    /// 拜雅 DT990 / DT880 齿音平抑。
+    Dt990,
+    /// AKG K701 / Q701 低频丰满。
+    K701,
     /// 自定义（用户手动调节，保留当前 bands）。
     Custom,
 }
 
 impl EqPreset {
     /// 全部预设（供 UI 下拉列表枚举）。
-    pub const ALL: [EqPreset; 6] = [
+    pub const ALL: [EqPreset; 10] = [
         EqPreset::Flat,
         EqPreset::Pop,
         EqPreset::Rock,
         EqPreset::Classical,
         EqPreset::Vocal,
+        EqPreset::Harman,
+        EqPreset::Hd600,
+        EqPreset::Dt990,
+        EqPreset::K701,
         EqPreset::Custom,
     ];
 
@@ -45,6 +57,10 @@ impl EqPreset {
             EqPreset::Rock => [3.5, 2.0, 1.0, 0.5, -0.5, 1.0, 2.0, 2.5, 2.5, 2.0],
             EqPreset::Classical => [2.0, 1.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 2.5],
             EqPreset::Vocal => [-2.0, -1.0, 0.5, 2.5, 3.5, 3.0, 1.5, 0.0, -1.0, -2.0],
+            EqPreset::Harman => [4.5, 3.5, 1.5, 0.0, 0.0, 0.0, 1.5, 1.0, -0.5, 0.0],
+            EqPreset::Hd600 => [2.5, 1.5, 0.0, 0.0, 0.0, 0.0, -0.5, -1.0, 1.0, 2.0],
+            EqPreset::Dt990 => [0.0, -0.5, 0.0, 0.5, 1.5, 1.5, 0.5, -2.5, -4.5, -1.0],
+            EqPreset::K701 => [4.0, 3.0, 1.5, 0.5, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0],
         }
     }
 
@@ -56,6 +72,10 @@ impl EqPreset {
             EqPreset::Rock => "摇滚",
             EqPreset::Classical => "古典",
             EqPreset::Vocal => "人声",
+            EqPreset::Harman => "哈曼参考曲线",
+            EqPreset::Hd600 => "森海 HD600/650",
+            EqPreset::Dt990 => "拜雅 DT990/880",
+            EqPreset::K701 => "AKG K701/Q701",
             EqPreset::Custom => "自定义",
         }
     }
@@ -77,6 +97,10 @@ impl std::str::FromStr for EqPreset {
             "Rock" | "摇滚" => Ok(EqPreset::Rock),
             "Classical" | "古典" => Ok(EqPreset::Classical),
             "Vocal" | "人声" => Ok(EqPreset::Vocal),
+            "Harman" | "哈曼参考" | "哈曼参考曲线" => Ok(EqPreset::Harman),
+            "Hd600" | "HD600" | "森海 HD600/650" => Ok(EqPreset::Hd600),
+            "Dt990" | "DT990" | "拜雅 DT990/880" => Ok(EqPreset::Dt990),
+            "K701" | "AKG K701/Q701" => Ok(EqPreset::K701),
             "Custom" | "自定义" => Ok(EqPreset::Custom),
             _ => Err(()),
         }
@@ -104,6 +128,16 @@ pub struct Equalizer {
     pub preset: EqPreset,
 }
 
+/// 10 段均衡器标准中心频率（Hz）。
+pub const EQ_BAND_FREQS: [f32; 10] = [
+    31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
+
+/// 10 段均衡器界面显示频点文本标签。
+pub const EQ_BAND_LABELS: [&str; 10] = [
+    "31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k",
+];
+
 impl Default for Equalizer {
     fn default() -> Self {
         Self::flat()
@@ -115,9 +149,7 @@ impl Equalizer {
     pub fn flat() -> Self {
         Self {
             bands: [0.0; 10],
-            band_freqs: [
-                31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
-            ],
+            band_freqs: EQ_BAND_FREQS,
             master_gain_db: 0.0,
             enabled: true,
             preset: EqPreset::Flat,

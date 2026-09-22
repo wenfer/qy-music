@@ -58,11 +58,22 @@ pub struct Settings {
     /// DSP 音效配置（字段级 `serde(default)`，兼容旧版本）。
     #[serde(default)]
     pub effects: crate::audio::AudioEffects,
+    /// 用户自定义音效预设列表（支持添加、编辑、保存、导入与导出）。
+    #[serde(default)]
+    pub custom_presets: Vec<crate::audio::SoundPreset>,
+    /// 当前激活的音效预设 ID。
+    #[serde(default = "default_active_preset_id")]
+    pub active_preset_id: String,
 }
 
 /// `window_size` 的 serde 默认值函数。
 fn default_window_size() -> WindowSize {
     WindowSize::default()
+}
+
+/// `active_preset_id` 的 serde 默认值函数。
+fn default_active_preset_id() -> String {
+    "builtin_flat".to_string()
 }
 
 impl Default for Settings {
@@ -78,6 +89,8 @@ impl Default for Settings {
             lyric_offset_ms: 0,
             window_size: WindowSize::default(),
             effects: crate::audio::AudioEffects::default(),
+            custom_presets: Vec::new(),
+            active_preset_id: default_active_preset_id(),
         }
     }
 }
@@ -158,13 +171,20 @@ mod tests {
                 height: 720.0,
             },
             effects: crate::audio::AudioEffects {
-                stereo_widener_enabled: true,
-                stereo_widener_level: 0.8,
+                spatial_audio_enabled: true,
+                spatial_audio_level: 0.8,
+                dialogue_clarity_level: 0.5,
+                tube_warmth_enabled: true,
+                tube_warmth_level: 0.6,
+                bs2b_mode: false,
+                pure_direct: false,
                 bass_boost_enabled: true,
                 bass_boost_level: 0.7,
                 vocal_crystalizer_enabled: true,
                 vocal_crystalizer_level: 0.6,
             },
+            custom_presets: Vec::new(),
+            active_preset_id: "builtin_rock".to_string(),
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();

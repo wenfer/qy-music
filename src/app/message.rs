@@ -70,9 +70,23 @@ pub enum AppMessage {
     SetMasterGain(f32),
 
     // ── DSP 音效增强 ──
-    /// 切换 3D 立体声拓宽开关。
+    /// 切换 Hi-Fi 纯净直通模式（绕过全部 EQ 与 DSP）。
+    TogglePureDirect,
+    /// 切换电子管胆机暖音开关。
+    ToggleTubeWarmth,
+    /// 设置电子管胆机暖音浓度 (0.0..=1.0)。
+    SetTubeWarmthLevel(f32),
+    /// 切换经典发烧耳放 BS2B 纯净互馈模式。
+    ToggleBs2bMode,
+    /// 切换全景空间声场开关。
+    ToggleSpatialAudio,
+    /// 设置全景空间声场宽度 (0.0..=1.0)。
+    SetSpatialAudioLevel(f32),
+    /// 设置对白 / 人声居中清晰度 (0.0..=1.0)。
+    SetDialogueClarityLevel(f32),
+    /// 切换 3D 立体声拓宽开关（别名兼容）。
     ToggleStereoWidener,
-    /// 设置 3D 立体声拓宽强度 (0.0..=1.0)。
+    /// 设置 3D 立体声拓宽强度 (0.0..=1.0)（别名兼容）。
     SetStereoWidenerLevel(f32),
     /// 切换动态低音增强开关。
     ToggleBassBoost,
@@ -107,11 +121,35 @@ pub enum AppMessage {
     /// 持久化 tick（1s）：若有待落盘的窗口尺寸则写入 settings.json。
     PersistTick,
 
-    // ── 布局（增量设计 v1.1）──
+    // ── 布局 / 独立窗口（增量设计）──
     /// 切换主界面主体 Tab（列表 / 歌词）（T13）。
     SwitchMainTab(MainTab),
-    /// 展开 / 折叠均衡器面板（T14）。
+    /// 展开 / 折叠主界面内嵌均衡器面板（T14）。
     ToggleEqPanel,
+    /// 打开独立音效控制台窗口（若已打开则置顶聚焦）。
+    OpenEffectsWindow,
+    /// 切换独立音效控制台窗口。
+    ToggleEffectsWindow,
+    /// 关闭独立音效控制台窗口。
+    CloseEffectsWindow,
+    /// 重置全部音效与均衡器为默认平直无染色状态。
+    ResetAllEffects,
+
+    // ── 音效预设库管理（增量设计）──
+    /// 选择并切换当前音效预设（通过预设 id）。
+    SelectSoundPreset(String),
+    /// 更新新建预设名称输入框内容。
+    SetPresetNameInput(String),
+    /// 将当前调音参数保存为新的自定义预设。
+    SaveCurrentAsNewPreset,
+    /// 更新/覆盖当前选中的自定义预设。
+    SaveActivePreset,
+    /// 删除指定 ID 的自定义预设。
+    DeletePreset(String),
+    /// 导出当前激活预设为 JSON 文件。
+    ExportPreset,
+    /// 从外部 JSON 文件导入音效预设。
+    ImportPreset,
 }
 
 /// 主界面主体 Tab（⑥区，T13）。
