@@ -10,7 +10,7 @@
 - **产品定位**：仿「千千静听」经典交互范式的跨平台桌面音乐播放器。
 - **原创品牌**：**聆风 / Lingfeng (LFPlayer)**。**禁止**在界面、代码或文档中使用已受版权保护的第三方专有商标与素材。
 - **核心体验**：超低资源开销、复古怀旧的竖窄单列操作手感、纯粹高保真的音频回放、实时分段 LED 频谱跳动、LRC 同步歌词。
-- **技术栈**：Rust 2021 + [iced 0.13](file:///Users/admin/vscode/qy-music/Cargo.toml#L65)（MVU 架构与多窗口 daemon）+ [symphonia](file:///Users/admin/vscode/qy-music/Cargo.toml#L32) + [cpal](file:///Users/admin/vscode/qy-music/Cargo.toml#L35) + [rubato](file:///Users/admin/vscode/qy-music/Cargo.toml#L38) + [rustfft](file:///Users/admin/vscode/qy-music/Cargo.toml#L41)。
+- **技术栈**：Rust 2021 + [iced 0.14](file:///Users/admin/vscode/qy-music/Cargo.toml#L65)（MVU 架构与多窗口 daemon）+ [symphonia 0.6](file:///Users/admin/vscode/qy-music/Cargo.toml#L32) + [cpal 0.18](file:///Users/admin/vscode/qy-music/Cargo.toml#L35) + [rubato 5.0](file:///Users/admin/vscode/qy-music/Cargo.toml#L38) + [rustfft 6.4](file:///Users/admin/vscode/qy-music/Cargo.toml#L41)。
 
 ---
 
@@ -111,22 +111,24 @@ src/
 
 ---
 
-## 4. iced 0.13 踩坑记录与 API 规范
+## 4. iced 0.14 踩坑记录与 API 规范
 
-在修改 GUI 或 iced 相关逻辑时，必须注意以下在 iced 0.13 中的特殊用法：
+在修改 GUI 或 iced 相关逻辑时，必须注意以下在 iced 0.14 中的关键用法与升级变化：
 
-1. **定时器后端依赖**：
-   - iced 0.13 默认 feature 不包含异步定时器运行时。
-   - 若使用 [`iced::time::every`](file:///Users/admin/vscode/qy-music/src/app/subscription.rs#L89)，必须在 [`Cargo.toml`](file:///Users/admin/vscode/qy-music/Cargo.toml#L65) 的 iced 依赖中包含 `"smol"` feature。
-2. **多窗口管理使用 `iced::daemon`**：
-   - 本项目通过 [`iced::daemon`](file:///Users/admin/vscode/qy-music/src/app/mod.rs#L45) 启动，它允许初始不展示单一主窗口，并通过 `window::open` / `window::close` 动态创建与关闭辅助窗口（迷你模式、桌面歌词）。
-   - **窗口显隐控制**：iced 0.13 不存在 `window::show()` / `window::hide()`，控制显隐必须使用 [`window::change_mode(id, Mode::Hidden / Mode::Windowed)`](file:///Users/admin/vscode/qy-music/src/app/update.rs)。
-3. **闭包样式签名**：
-   - 按钮样式 `button::style` 的闭包签名为 `fn(&Theme, Status) -> button::Style`，其中的 `Status` 是**按值传递**而非引用。
-4. **Text 控件**：
-   - `Text<'a, Theme, Renderer>` 控件在 0.13 中不带有 Message 泛型参数。
+1. **多窗口与 Daemon 入口**：
+   - iced 0.14 不再需要显式启用 `multi-window` feature（已原生默认内置）。
+   - [`iced::daemon`](file:///Users/admin/vscode/qy-music/src/app/mod.rs#L45) 参数签名为 `(boot, update, view)`，即直接传入 `(AppState::new, AppState::update, AppState::view)`，随后通过链式 `.title(...)` 配置动态标题，并以 `.run()` 启动。
+   - **窗口显隐控制**：iced 0.14 将旧版本的 `window::change_mode` 改名为 [`window::set_mode(id, Mode::Hidden / Mode::Windowed)`](file:///Users/admin/vscode/qy-music/src/app/update.rs)。
+2. **定时器后端依赖**：
+   - iced 0.14 若使用异步定时器 [`iced::time::every`](file:///Users/admin/vscode/qy-music/src/app/subscription.rs#L73)，必须在 [`Cargo.toml`](file:///Users/admin/vscode/qy-music/Cargo.toml#L65) 的 iced 依赖中包含 `"smol"` feature。
+3. **Subscription 桥接跨线程通道**：
+   - 0.14 中 `Subscription::run_with_id` 被 `Subscription::run(fn() -> Stream)` 取代。
+   - `iced::stream::channel` 产生 `mpsc::Sender<T>`，在闭包中应显式标注参数类型，如 `|mut output: iced::futures::channel::mpsc::Sender<AppMessage>|`。
+4. **组件与样式命名规范**：
+   - 间距控件：使用 [`iced::widget::space::horizontal()`](file:///Users/admin/vscode/qy-music/src/ui/controls.rs#L60) 或 `Space::new(...)`，不再存在平级的 `horizontal_space()`。
+   - 进度条：尺寸方法统一为 [`.length(Length::Fill)`](file:///Users/admin/vscode/qy-music/src/ui/controls.rs#L100)（原 `.width(...)` 已转为私有属性）。
 5. **窗口关闭拦截 (CloseRequested)**：
-   - 主窗口配置了 `exit_on_close_request: false`，因此用户点击关闭按钮时，iced 会发出 `window::Event::CloseRequested`。此事件在 [`update.rs`](file:///Users/admin/vscode/qy-music/src/app/update.rs) 中被转换为「隐藏主窗口到托盘」，而非直接退出进程。
+   - 主窗口配置了 `exit_on_close_request: false`，用户点击关闭按钮发出 `window::close_requests()`，由 MVU 决定「最小化到托盘」或「退出进程」。
 
 ---
 

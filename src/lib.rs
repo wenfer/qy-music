@@ -1,4 +1,4 @@
-//! 聆风 / Lingfeng — 跨平台音乐播放器
+//! LFPlayer — 跨平台音乐播放器
 //!
 //! 模块分层：
 //! - `error`    : 统一错误类型 [`LingfengError`]

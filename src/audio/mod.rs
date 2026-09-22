@@ -16,7 +16,7 @@ pub mod resampler;
 pub use decoder::SymphoniaDecoder;
 pub use dsp::{Biquad, BiquadCoeff, DspChain};
 pub use engine::{PlaybackEngine, PlaybackEngineHandle};
-pub use equalizer::{Equalizer, EqPreset};
+pub use equalizer::{EqPreset, Equalizer};
 pub use events::{AudioEvent, EngineCommand};
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -26,20 +26,15 @@ use std::time::Duration;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 
 /// 播放状态（与 [`PlayerStatus`] 配合）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PlaybackState {
     /// 停止（无当前曲目或已结束未自动续播）。
+    #[default]
     Stopped,
     /// 正在播放。
     Playing,
     /// 已暂停。
     Paused,
-}
-
-impl Default for PlaybackState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 /// 播放器当前状态快照。

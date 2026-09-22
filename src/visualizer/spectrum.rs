@@ -53,11 +53,23 @@ impl SpectrumData {
             let i1 = i1.clamp(i0 + 1, bins);
             let sum: f32 = mags[i0..i1].iter().sum();
             let avg = sum / (i1 - i0) as f32;
-            // 幅度 → dB → 归一化（[-90dB, 0dB] → [0, 1]）
-            let db = 20.0 * (avg + 1e-7).log10();
-            let norm = ((db + 90.0) / 90.0).clamp(0.0, 1.0);
-            // 轻微 gamma 提升低频可见度
-            let norm = norm.powf(0.75);
+            if avg <= 1e-6 {
+                bands.push(0.0);
+                continue;
+            }
+            // 归一化幅度（FFT 长度归一，N/4 为 Hann 窗满刻度单音基准）
+            let ref_amp = (fft_size as f32 / 4.0).max(1.0);
+            let norm_amp = (avg / ref_amp).max(1e-6);
+            let raw_db = 20.0 * norm_amp.log10();
+            // 粉红噪声频响倾斜补偿（真实音乐高频能量自然衰减，适度倾斜使高低频律动活跃均衡）
+            let tilt_db = if band_count > 1 {
+                (b as f32 / (band_count - 1) as f32) * 10.0
+            } else {
+                0.0
+            };
+            let db = raw_db + tilt_db;
+            // 经典 -50dBFS ~ 0dBFS 动态视窗，每 3dB 对应约 1 个 LED 段，起伏灵动，绝非死死顶在满格
+            let norm = ((db + 50.0) / 50.0).clamp(0.0, 1.0);
             bands.push(norm);
         }
         Self {

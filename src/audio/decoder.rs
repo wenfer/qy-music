@@ -7,9 +7,11 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
-use symphonia::core::audio::{SampleBuffer, SignalSpec};
+use symphonia::core::codecs::audio::AudioDecoder;
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::TrackType;
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
 
 use crate::error::{LingfengError, Result};
@@ -17,7 +19,7 @@ use crate::error::{LingfengError, Result};
 /// Symphonia 解码器封装。
 pub struct SymphoniaDecoder {
     format_reader: Box<dyn symphonia::core::formats::FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    decoder: Box<dyn AudioDecoder>,
     /// 当前轨 id（保留，便于将来多轨过滤）。
     #[allow(dead_code)]
     track_id: u32,
@@ -25,7 +27,6 @@ pub struct SymphoniaDecoder {
     channels: u16,
     /// 估算时长（基于 `n_frames`）。
     duration: Option<Duration>,
-    sample_buf: Option<SampleBuffer<f32>>,
 }
 
 impl SymphoniaDecoder {
@@ -39,26 +40,35 @@ impl SymphoniaDecoder {
             hint.with_extension(ext);
         }
 
-        let probe = get_probe()
-            .format(&hint, mss, &Default::default(), &Default::default())
+        let format_reader = get_probe()
+            .probe(&hint, mss, Default::default(), Default::default())
             .map_err(LingfengError::from)?;
-        let format_reader = probe.format;
 
         let track = format_reader
-            .default_track()
+            .default_track(TrackType::Audio)
             .ok_or_else(|| LingfengError::other("未找到可用音轨"))?;
         let track_id = track.id;
-        let codec_params = &track.codec_params;
+
+        let codec_params = match &track.codec_params {
+            Some(CodecParameters::Audio(ref params)) => params,
+            _ => return Err(LingfengError::other("未找到可用音频编解码参数")),
+        };
+
         let sample_rate = codec_params
             .sample_rate
             .ok_or_else(|| LingfengError::other("未知采样率"))?;
-        let channels = codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
-        let duration = codec_params.n_frames.zip(Some(sample_rate)).map(|(n, sr)| {
-            Duration::from_secs_f64(n as f64 / sr as f64)
-        });
+        let channels = codec_params
+            .channels
+            .as_ref()
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
+        let duration = track
+            .num_frames
+            .zip(Some(sample_rate))
+            .map(|(n, sr)| Duration::from_secs_f64(n as f64 / sr as f64));
 
         let decoder = get_codecs()
-            .make(codec_params, &Default::default())
+            .make_audio_decoder(codec_params, &Default::default())
             .map_err(LingfengError::from)?;
 
         let decoder = Self {
@@ -68,7 +78,6 @@ impl SymphoniaDecoder {
             sample_rate,
             channels,
             duration,
-            sample_buf: None,
         };
         Ok((decoder, sample_rate, channels, duration))
     }
@@ -93,9 +102,13 @@ impl SymphoniaDecoder {
     /// 解码错误以 `Error` 形式经通道上报（不 panic）；这里对可恢复错误返回 `None`。
     pub fn next_packet(&mut self) -> Option<Vec<f32>> {
         let packet = match self.format_reader.next_packet() {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                log::debug!("音频流播放完毕 (EOF)");
+                return None;
+            }
             Err(e) => {
-                log::debug!("解码结束/出错: {e}");
+                log::debug!("解码流读取出错: {e}");
                 return None;
             }
         };
@@ -108,14 +121,8 @@ impl SymphoniaDecoder {
             }
         };
 
-        if self.sample_buf.is_none() {
-            let spec: SignalSpec = *decoded.spec();
-            let capacity = decoded.capacity();
-            self.sample_buf = Some(SampleBuffer::<f32>::new(capacity as u64, spec));
-        }
-
-        let buf = self.sample_buf.as_mut().unwrap();
-        buf.copy_interleaved_ref(decoded);
-        Some(buf.samples().to_vec())
+        let mut samples = Vec::with_capacity(decoded.frames() * self.channels as usize);
+        decoded.copy_to_vec_interleaved(&mut samples);
+        Some(samples)
     }
 }

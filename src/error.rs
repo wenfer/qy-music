@@ -73,15 +73,7 @@ macro_rules! impl_cpal_err {
     };
 }
 
-impl_cpal_err!(
-    cpal::DevicesError,
-    cpal::DefaultStreamConfigError,
-    cpal::SupportedStreamConfigsError,
-    cpal::BuildStreamError,
-    cpal::PlayStreamError,
-    cpal::PauseStreamError,
-    cpal::StreamError,
-);
+impl_cpal_err!(cpal::Error,);
 
 /// 便捷结果别名。
 pub type Result<T> = std::result::Result<T, LingfengError>;

@@ -27,10 +27,7 @@ pub fn load_for_track(audio_path: &Path) -> Option<Lrc> {
 fn sibling_lrc(audio_path: &Path) -> Option<PathBuf> {
     let parent = audio_path.parent()?;
     let stem = audio_path.file_stem()?;
-    Some(parent.join(format!(
-        "{}.lrc",
-        stem.to_str().unwrap_or("unknown")
-    )))
+    Some(parent.join(format!("{}.lrc", stem.to_str().unwrap_or("unknown"))))
 }
 
 /// 在指定目录内批量匹配（用于导入文件夹时预加载歌词）。
@@ -48,12 +45,8 @@ mod tests {
     /// 创建唯一临时目录（不依赖外部 crate）。
     fn temp_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "lingfeng_qa_{}_{}_{}",
-            std::process::id(),
-            tag,
-            n
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("lingfeng_qa_{}_{}_{}", std::process::id(), tag, n));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

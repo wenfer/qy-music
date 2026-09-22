@@ -61,15 +61,24 @@ impl EqPreset {
     }
 
     /// 由名称 / 标签解析预设（用于设置反序列化）。
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for EqPreset {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "Flat" | "平直" => Some(EqPreset::Flat),
-            "Pop" | "流行" => Some(EqPreset::Pop),
-            "Rock" | "摇滚" => Some(EqPreset::Rock),
-            "Classical" | "古典" => Some(EqPreset::Classical),
-            "Vocal" | "人声" => Some(EqPreset::Vocal),
-            "Custom" | "自定义" => Some(EqPreset::Custom),
-            _ => None,
+            "Flat" | "平直" => Ok(EqPreset::Flat),
+            "Pop" | "流行" => Ok(EqPreset::Pop),
+            "Rock" | "摇滚" => Ok(EqPreset::Rock),
+            "Classical" | "古典" => Ok(EqPreset::Classical),
+            "Vocal" | "人声" => Ok(EqPreset::Vocal),
+            "Custom" | "自定义" => Ok(EqPreset::Custom),
+            _ => Err(()),
         }
     }
 }
@@ -179,7 +188,9 @@ mod tests {
             for &g in p.bands().iter() {
                 assert!(
                     (-12.0..=12.0).contains(&g),
-                    "预设 {:?} 段增益应在 ±12dB 内，实际 {}", p, g
+                    "预设 {:?} 段增益应在 ±12dB 内，实际 {}",
+                    p,
+                    g
                 );
             }
         }

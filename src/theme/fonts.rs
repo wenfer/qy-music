@@ -51,7 +51,11 @@ mod tests {
     /// 内嵌字节必须是合法 OTF/CFF（SFNT 魔数 `OTTO`），且体积合理（> 1 MiB）。
     #[test]
     fn cjk_bytes_are_valid_otf() {
-        assert!(CJK_BYTES.len() > 1024 * 1024, "字体体积异常: {}", CJK_BYTES.len());
+        assert!(
+            CJK_BYTES.len() > 1024 * 1024,
+            "字体体积异常: {}",
+            CJK_BYTES.len()
+        );
         assert_eq!(
             &CJK_BYTES[..4],
             b"OTTO",

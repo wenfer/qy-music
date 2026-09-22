@@ -3,6 +3,4 @@
 pub mod persist;
 pub mod settings;
 
-pub use settings::{
-    DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH, Settings, WindowSize,
-};
+pub use settings::{Settings, WindowSize, DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};

@@ -2,6 +2,7 @@
 
 pub mod schema;
 pub mod skin;
+#[allow(clippy::module_inception)]
 pub mod theme;
 
 #[cfg(feature = "gui")]

@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 
-use muda::{Menu, MenuItem, MenuEvent};
+use muda::{Menu, MenuEvent, MenuItem};
 use tray_icon::Icon;
 use tray_icon::TrayIconBuilder;
 
@@ -62,7 +62,7 @@ pub fn build_tray() -> Result<()> {
 
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_tooltip("聆风 / Lingfeng")
+        .with_tooltip("LFPlayer")
         .with_icon(build_icon())
         .build()
         .context("创建托盘图标失败")?;

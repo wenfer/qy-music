@@ -8,24 +8,36 @@ use std::path::Path;
 use crate::error::{LingfengError, Result};
 use crate::playlist::track::Track;
 
+/// 探测到的文件元数据。
+struct ProbedMetadata {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    duration: Option<std::time::Duration>,
+    is_lossless: Option<bool>,
+}
+
 /// 读取音频文件元数据并填充 [`Track`]。
 ///
 /// 读取失败时回退为 [`Track::from_path`]（标题取文件名），不报错中断导入。
 pub fn read_metadata(path: &Path) -> Track {
     let mut track = Track::from_path(path.to_path_buf());
     match probe_metadata(path) {
-        Ok((title, artist, album, duration)) => {
-            if let Some(t) = title {
+        Ok(meta) => {
+            if let Some(t) = meta.title {
                 if !t.is_empty() {
                     track.title = t;
                 }
             }
-            if let Some(a) = artist {
+            if let Some(a) = meta.artist {
                 track.artist = a;
             }
-            track.album = album;
-            if let Some(d) = duration {
+            track.album = meta.album;
+            if let Some(d) = meta.duration {
                 track.duration = d;
+            }
+            if let Some(l) = meta.is_lossless {
+                track.is_lossless = l;
             }
         }
         Err(e) => {
@@ -35,16 +47,9 @@ pub fn read_metadata(path: &Path) -> Track {
     track
 }
 
-/// 探测元数据，返回 (标题, 艺术家, 专辑, 时长)。
-fn probe_metadata(
-    path: &Path,
-) -> Result<(
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<std::time::Duration>,
-)> {
-    use lofty::file::TaggedFileExt;
+/// 探测元数据，返回 `ProbedMetadata`。
+fn probe_metadata(path: &Path) -> Result<ProbedMetadata> {
+    use lofty::file::{AudioFile, FileType, TaggedFileExt};
     use lofty::probe::Probe;
     use lofty::tag::ItemKey;
 
@@ -57,14 +62,25 @@ fn probe_metadata(
 
     let (title, artist, album) = match tagged.primary_tag().or_else(|| tagged.first_tag()) {
         Some(tag) => (
-            tag.get_string(&ItemKey::TrackTitle).map(str::to_string),
-            tag.get_string(&ItemKey::TrackArtist).map(str::to_string),
-            tag.get_string(&ItemKey::AlbumTitle).map(str::to_string),
+            tag.get_string(ItemKey::TrackTitle).map(str::to_string),
+            tag.get_string(ItemKey::TrackArtist).map(str::to_string),
+            tag.get_string(ItemKey::AlbumTitle).map(str::to_string),
         ),
         None => (None, None, None),
     };
 
-    // TaggedFile 不直接暴露时长；播放时由解码器补充 `Track.duration`。
-    let duration = None;
-    Ok((title, artist, album, duration))
+    let duration = Some(tagged.properties().duration()).filter(|d| !d.is_zero());
+    let is_lossless = match tagged.file_type() {
+        FileType::Flac | FileType::Wav | FileType::Aiff | FileType::Ape => Some(true),
+        FileType::Mpeg | FileType::Vorbis | FileType::Opus => Some(false),
+        _ => Some(Track::detect_lossless(path)),
+    };
+
+    Ok(ProbedMetadata {
+        title,
+        artist,
+        album,
+        duration,
+        is_lossless,
+    })
 }

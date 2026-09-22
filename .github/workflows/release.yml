@@ -1,0 +1,321 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v0.1.0, leave empty to test build without publishing)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. Linux 构建 (amd64 / arm64)
+  # ─────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            arch: x86_64
+            arch_slug: linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            arch: arm64
+            arch_slug: linux-arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+            TAG="v${VER}-build.${GITHUB_SHA:0:7}"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libasound2-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip debug symbols
+        run: strip target/${{ matrix.target }}/release/lingfeng
+
+      - name: Package Linux artifact
+        shell: bash
+        run: |
+          DIST_DIR="dist/lingfeng-${{ matrix.arch_slug }}"
+          mkdir -p "$DIST_DIR"
+          cp "target/${{ matrix.target }}/release/lingfeng" "$DIST_DIR/"
+          cp README.md LICENSE "$DIST_DIR/"
+
+          ARCHIVE_NAME="lingfeng-${RELEASE_TAG}-${{ matrix.arch_slug }}.tar.gz"
+          tar -czvf "$ARCHIVE_NAME" -C dist "lingfeng-${{ matrix.arch_slug }}"
+          sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+
+          mkdir -p artifacts
+          mv "$ARCHIVE_NAME" "${ARCHIVE_NAME}.sha256" artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.arch_slug }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Windows 构建 (amd64 / arm64)
+  # ─────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x86_64
+            arch_slug: windows-x86_64
+            msvc_arch: amd64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+            arch_slug: windows-arm64
+            msvc_arch: amd64_arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+            TAG="v${VER}-build.${GITHUB_SHA:0:7}"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Configure MSVC Environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Windows artifact
+        shell: pwsh
+        run: |
+          $distDir = "dist/lingfeng-${{ matrix.arch_slug }}"
+          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/lingfeng.exe" -Destination $distDir
+          Copy-Item "README.md" -Destination $distDir
+          Copy-Item "LICENSE" -Destination $distDir
+
+          $archiveName = "lingfeng-${env:RELEASE_TAG}-${{ matrix.arch_slug }}.zip"
+          Compress-Archive -Path "$distDir/*" -DestinationPath $archiveName -Force
+          
+          # Generate sha256 checksum
+          $hash = (Get-FileHash -Algorithm SHA256 $archiveName).Hash.ToLower()
+          "$hash  $archiveName" | Set-Content "${archiveName}.sha256"
+
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Move-Item $archiveName artifacts/
+          Move-Item "${archiveName}.sha256" artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.arch_slug }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. macOS 构建 (amd64 / arm64 / universal)
+  # ─────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS (arm64, x86_64, universal)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+            TAG="v${VER}-build.${GITHUB_SHA:0:7}"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain (Dual Targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-dual
+
+      - name: Build macOS Apple Silicon (arm64)
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          strip target/aarch64-apple-darwin/release/lingfeng
+
+      - name: Build macOS Intel (x86_64)
+        run: |
+          cargo build --release --target x86_64-apple-darwin
+          strip target/x86_64-apple-darwin/release/lingfeng
+
+      - name: Package macOS artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts dist
+
+          # 1. ARM64 打包
+          mkdir -p "dist/lingfeng-macos-arm64"
+          cp target/aarch64-apple-darwin/release/lingfeng "dist/lingfeng-macos-arm64/"
+          cp README.md LICENSE "dist/lingfeng-macos-arm64/"
+          PKG_ARM="lingfeng-${RELEASE_TAG}-macos-arm64.tar.gz"
+          tar -czvf "$PKG_ARM" -C dist "lingfeng-macos-arm64"
+          shasum -a 256 "$PKG_ARM" > "${PKG_ARM}.sha256"
+          mv "$PKG_ARM" "${PKG_ARM}.sha256" artifacts/
+
+          # 2. x86_64 打包
+          mkdir -p "dist/lingfeng-macos-x86_64"
+          cp target/x86_64-apple-darwin/release/lingfeng "dist/lingfeng-macos-x86_64/"
+          cp README.md LICENSE "dist/lingfeng-macos-x86_64/"
+          PKG_X86="lingfeng-${RELEASE_TAG}-macos-x86_64.tar.gz"
+          tar -czvf "$PKG_X86" -C dist "lingfeng-macos-x86_64"
+          shasum -a 256 "$PKG_X86" > "${PKG_X86}.sha256"
+          mv "$PKG_X86" "${PKG_X86}.sha256" artifacts/
+
+          # 3. Universal Binary 打包 (通过 lipo 合并双架构)
+          mkdir -p "dist/lingfeng-macos-universal"
+          lipo -create -output "dist/lingfeng-macos-universal/lingfeng" \
+            target/aarch64-apple-darwin/release/lingfeng \
+            target/x86_64-apple-darwin/release/lingfeng
+          cp README.md LICENSE "dist/lingfeng-macos-universal/"
+          PKG_UNI="lingfeng-${RELEASE_TAG}-macos-universal.tar.gz"
+          tar -czvf "$PKG_UNI" -C dist "lingfeng-macos-universal"
+          shasum -a 256 "$PKG_UNI" > "${PKG_UNI}.sha256"
+          mv "$PKG_UNI" "${PKG_UNI}.sha256" artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-macos
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. Release 发布与资产聚合
+  # ─────────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+            IS_RELEASE="true"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            IS_RELEASE="true"
+          else
+            VER=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+            TAG="v${VER}-build.${GITHUB_SHA:0:7}"
+            IS_RELEASE="false"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "IS_RELEASE=${IS_RELEASE}" >> $GITHUB_ENV
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: all_artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        shell: bash
+        run: |
+          cd all_artifacts
+          # 汇总全部单项 sha256 文件内容，并按文件名排序
+          cat *.sha256 | sort -k2 > SHA256SUMS.txt
+          echo "Generated SHA256SUMS.txt:"
+          cat SHA256SUMS.txt
+
+      - name: Publish to GitHub Release
+        if: env.IS_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
+          files: |
+            all_artifacts/*.tar.gz
+            all_artifacts/*.zip
+            all_artifacts/*.sha256
+            all_artifacts/SHA256SUMS.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false

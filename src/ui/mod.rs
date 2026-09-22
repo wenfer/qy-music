@@ -7,6 +7,7 @@ pub mod lyrics_view;
 pub mod main_window;
 pub mod mini_window;
 pub mod playlist_view;
+pub mod style;
 pub mod tray;
 pub mod widgets;
 

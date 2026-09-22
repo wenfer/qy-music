@@ -190,10 +190,8 @@ mod tests {
 
     #[test]
     fn parse_basic() {
-        let lrc = Lrc::parse(
-            b"[ti:Demo]\n[ar:Tester]\n[00:10.00]Hello\n[00:20.50]World\n",
-        )
-        .unwrap();
+        let lrc =
+            Lrc::parse(b"[ti:Demo]\n[ar:Tester]\n[00:10.00]Hello\n[00:20.50]World\n").unwrap();
         assert_eq!(lrc.title.as_deref(), Some("Demo"));
         assert_eq!(lrc.artist.as_deref(), Some("Tester"));
         assert_eq!(lrc.lines.len(), 2);
@@ -226,10 +224,7 @@ mod tests {
 
     #[test]
     fn current_line_binary_search() {
-        let lrc = Lrc::parse(
-            b"[00:10.00]A\n[00:20.00]B\n[00:30.00]C\n",
-        )
-        .unwrap();
+        let lrc = Lrc::parse(b"[00:10.00]A\n[00:20.00]B\n[00:30.00]C\n").unwrap();
         assert_eq!(lrc.current_line(Duration::from_millis(0)), 0);
         assert_eq!(lrc.current_line(Duration::from_millis(15_000)), 0);
         assert_eq!(lrc.current_line(Duration::from_millis(20_000)), 1);
@@ -349,7 +344,9 @@ mod tests {
     #[test]
     fn parse_gb18030_fallback_longer_text() {
         // “测试歌词” 的 GBK/GB18030 字节：测(B2 E2) 试(CA D4) 歌(B8 E8) 词(B4 CA)
-        let gbk = [0xB2u8, 0xE2u8, 0xCAu8, 0xD4u8, 0xB8u8, 0xE8u8, 0xB4u8, 0xCAu8];
+        let gbk = [
+            0xB2u8, 0xE2u8, 0xCAu8, 0xD4u8, 0xB8u8, 0xE8u8, 0xB4u8, 0xCAu8,
+        ];
         let mut bytes = b"[00:03.00]".to_vec();
         bytes.extend_from_slice(&gbk);
         bytes.push(b'\n');

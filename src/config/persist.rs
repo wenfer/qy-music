@@ -74,7 +74,10 @@ pub fn list_custom_skins() -> Vec<Skin> {
 /// 保存播放列表（仅路径，重建时再读元数据）。
 pub fn save_playlist_paths(paths: &[PathBuf]) -> Result<()> {
     ensure_dirs()?;
-    let serialized: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    let serialized: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
     let json = serde_json::to_string_pretty(&serialized)?;
     std::fs::write(playlist_path(), json).map_err(LingfengError::Io)?;
     Ok(())

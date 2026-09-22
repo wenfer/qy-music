@@ -6,18 +6,19 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::path::PathBuf;
 
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 
 use crate::playlist::metadata::read_metadata;
 use crate::playlist::track::Track;
 
 /// 循环 / 顺序模式。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LoopMode {
     /// 单曲循环。
     Single,
     /// 列表循环（播完回到开头）。
+    #[default]
     List,
     /// 随机（不重复不遗漏）。
     Random,
@@ -48,12 +49,6 @@ impl LoopMode {
 impl fmt::Display for LoopMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.label())
-    }
-}
-
-impl Default for LoopMode {
-    fn default() -> Self {
-        Self::List
     }
 }
 
@@ -160,6 +155,7 @@ impl Playlist {
     }
 
     /// 计算下一首下标（按队列与循环模式），并更新 `current_index`。
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<usize> {
         if self.tracks.is_empty() {
             return None;
@@ -241,7 +237,7 @@ impl Playlist {
             return Some(cur);
         }
         let mut candidates: Vec<usize> = (0..self.tracks.len()).filter(|&i| i != cur).collect();
-        candidates.shuffle(&mut thread_rng());
+        candidates.shuffle(&mut rng());
         candidates.first().copied()
     }
 
@@ -251,7 +247,7 @@ impl Playlist {
         if let Some(c) = self.current_index {
             v.retain(|&x| x != c);
         }
-        v.shuffle(&mut thread_rng());
+        v.shuffle(&mut rng());
         self.remaining = v;
     }
 }
@@ -389,11 +385,7 @@ mod tests {
         let mut pl = Playlist::new();
         pl.add_many(dummy_paths(1));
         pl.set_loop_mode(LoopMode::Random);
-        assert_eq!(
-            pl.next(),
-            Some(0),
-            "单曲列表随机模式下 next() 应返回该曲"
-        );
+        assert_eq!(pl.next(), Some(0), "单曲列表随机模式下 next() 应返回该曲");
     }
 
     #[test]

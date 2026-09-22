@@ -94,14 +94,22 @@ impl SpectrumAnalyzer {
         self.fft.process(&mut input);
         // 仅取前半（实信号对称），幅度 = sqrt(re^2 + im^2)
         let half = self.fft_size / 2;
-        let mags: Vec<f32> = input[..half].iter().map(|c| (c.re * c.re + c.im * c.im).sqrt()).collect();
+        let mags: Vec<f32> = input[..half]
+            .iter()
+            .map(|c| (c.re * c.re + c.im * c.im).sqrt())
+            .collect();
         Some(mags)
     }
 
     /// 便捷：计算幅度谱并直接映射为 32 频段 [`SpectrumData`]（默认参数）。
-    pub fn compute_spectrum(&mut self, band_count: usize, led_segments: usize) -> Option<SpectrumData> {
-        self.compute()
-            .map(|mags| SpectrumData::from_magnitudes(&mags, self.sample_rate, band_count, led_segments))
+    pub fn compute_spectrum(
+        &mut self,
+        band_count: usize,
+        led_segments: usize,
+    ) -> Option<SpectrumData> {
+        self.compute().map(|mags| {
+            SpectrumData::from_magnitudes(&mags, self.sample_rate, band_count, led_segments)
+        })
     }
 }
 

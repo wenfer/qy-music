@@ -42,21 +42,18 @@ pub fn run() -> iced::Result {
     // `.default_font(Font)` 让所有未显式指定字体的文本（含子窗口，同进程
     // Renderer 共享）都用该族渲染。托盘菜单 / 文件对话框为 OS 原生渲染，
     // 由系统字体负责。
-    iced::daemon(
-        |state: &AppState, _window: iced::window::Id| {
+    iced::daemon(AppState::new, AppState::update, AppState::view)
+        .title(|state: &AppState, _window: iced::window::Id| {
             state
                 .current_track()
-                .map(|t| format!("{} — 聆风", t.display_name()))
-                .unwrap_or_else(|| "聆风 / Lingfeng".to_string())
-        },
-        AppState::update,
-        AppState::view,
-    )
-    .font(crate::theme::fonts::CJK_BYTES)
-    .default_font(crate::theme::fonts::default_font())
-    .subscription(AppState::subscription)
-    .theme(|_state: &AppState, _window: iced::window::Id| iced::Theme::Dark)
-    .run_with(AppState::new)
+                .map(|t| t.display_name())
+                .unwrap_or_else(|| "LFPlayer".to_string())
+        })
+        .font(crate::theme::fonts::CJK_BYTES)
+        .default_font(crate::theme::fonts::default_font())
+        .subscription(AppState::subscription)
+        .theme(|_state: &AppState, _window: iced::window::Id| iced::Theme::Dark)
+        .run()
 }
 
 /// 由持久化尺寸构造主窗口设置。
@@ -76,6 +73,7 @@ pub(crate) fn main_window_settings(size: (f32, f32)) -> iced::window::Settings {
         min_size: Some(iced::Size::new(MIN_WINDOW_SIZE.0, MIN_WINDOW_SIZE.1)),
         resizable: true,
         exit_on_close_request: false,
+        visible: true,
         ..Default::default()
     }
 }

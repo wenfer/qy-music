@@ -4,18 +4,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iced::Task;
 use iced::window::Id as WindowId;
+use iced::Task;
 
 use crate::audio::{
-    AudioEvent, Equalizer, EqPreset, PlaybackEngine, PlaybackEngineHandle, PlaybackState,
-    PlayerStatus, init_channels, audio_event_sender,
+    audio_event_sender, init_channels, AudioEvent, EqPreset, Equalizer, PlaybackEngine,
+    PlaybackEngineHandle, PlaybackState, PlayerStatus,
 };
 use crate::config::persist;
 use crate::config::Settings;
 use crate::lyrics::load_for_track;
 use crate::playlist::{Playlist, Track};
-use crate::theme::{Skin, default_skin};
+use crate::theme::{default_skin, Skin};
 use crate::visualizer::SpectrumData;
 
 use crate::app::message::AppMessage;
@@ -80,8 +80,8 @@ impl AppState {
         equalizer.enabled = true;
 
         let (handle, cmd_rx) = PlaybackEngineHandle::new();
-        let audio_tx = audio_event_sender()
-            .unwrap_or_else(|| crossbeam_channel::unbounded::<AudioEvent>().0);
+        let audio_tx =
+            audio_event_sender().unwrap_or_else(|| crossbeam_channel::unbounded::<AudioEvent>().0);
         let engine = match PlaybackEngine::start(
             cmd_rx,
             audio_tx,
@@ -111,11 +111,30 @@ impl AppState {
         // 同步音量到引擎共享原子量
         handle.set_volume(settings.volume);
 
+        let start_mini = settings.mini_mode;
+
         // daemon 不自动开窗：由初始任务打开主窗口（尺寸取持久化值，T11），并记录其 id。
-        let (main_window_id, open_task) = iced::window::open(crate::app::main_window_settings((
-            settings.window_size.width,
-            settings.window_size.height,
-        )));
+        let (main_window_id, open_task) = iced::window::open(iced::window::Settings {
+            visible: !start_mini,
+            ..crate::app::main_window_settings((
+                settings.window_size.width,
+                settings.window_size.height,
+            ))
+        });
+
+        let (mini_window_id, mini_open_task) = if start_mini {
+            let (w, h) = skin.layout.mini_size;
+            let (id, task) = iced::window::open(iced::window::Settings {
+                size: iced::Size::new(w as f32, h as f32),
+                resizable: false,
+                decorations: true,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            (Some(id), Some(task))
+        } else {
+            (None, None)
+        };
 
         let state = Self {
             playlist,
@@ -126,7 +145,7 @@ impl AppState {
             spectrum: SpectrumData::silent(32, 16),
             skin,
             settings,
-            mini_window_id: None,
+            mini_window_id,
             mini_lyrics_id: None,
             engine: Arc::new(handle),
             main_window_id: Some(main_window_id),
@@ -137,7 +156,15 @@ impl AppState {
             eq_expanded: false,
             window_size_dirty: false,
         };
-        (state, open_task.map(|_| AppMessage::Noop))
+        let mut tasks = vec![open_task.map(|_| AppMessage::Noop)];
+        if let (Some(m_id), Some(m_task)) = (mini_window_id, mini_open_task) {
+            tasks.push(m_task.map(|_| AppMessage::Noop));
+            tasks.push(iced::window::gain_focus(m_id));
+        } else {
+            tasks.push(iced::window::gain_focus(main_window_id));
+        }
+        let task = iced::Task::batch(tasks);
+        (state, task)
     }
 
     /// 播放指定下标曲目（并自动加载同名歌词）。
@@ -176,7 +203,12 @@ impl AppState {
 
     /// 持久化播放列表路径。
     pub fn save_playlist(&self) {
-        let paths: Vec<PathBuf> = self.playlist.tracks.iter().map(|t| t.path.clone()).collect();
+        let paths: Vec<PathBuf> = self
+            .playlist
+            .tracks
+            .iter()
+            .map(|t| t.path.clone())
+            .collect();
         if let Err(e) = persist::save_playlist_paths(&paths) {
             log::warn!("保存播放列表失败: {e}");
         }

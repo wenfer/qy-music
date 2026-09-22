@@ -5,10 +5,7 @@
 //! 提供。
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{
-    BufferSize, OutputCallbackInfo, SampleRate, Stream, StreamConfig, StreamError,
-    SupportedBufferSize,
-};
+use cpal::{BufferSize, OutputCallbackInfo, SampleRate, Stream, StreamConfig, SupportedBufferSize};
 
 use crate::error::{LingfengError, Result};
 
@@ -16,13 +13,10 @@ use crate::error::{LingfengError, Result};
 ///
 /// 返回 `(流, 设备采样率, 设备声道数)`。回调 `data_cb` 在音频线程以拉模式被调用，
 /// `err_cb` 用于上报流错误。
-pub fn open_default_stream<F, E>(
-    data_cb: F,
-    err_cb: E,
-) -> Result<(Stream, u32, u16)>
+pub fn open_default_stream<F, E>(data_cb: F, err_cb: E) -> Result<(Stream, u32, u16)>
 where
     F: FnMut(&mut [f32], &OutputCallbackInfo) + Send + 'static,
-    E: FnMut(StreamError) + Send + 'static,
+    E: FnMut(cpal::Error) + Send + 'static,
 {
     let host = cpal::default_host();
     let device = host
@@ -40,11 +34,11 @@ where
             SupportedBufferSize::Unknown => BufferSize::Default,
         },
     };
-    let sample_rate = stream_config.sample_rate.0;
+    let sample_rate = stream_config.sample_rate;
     let channels = stream_config.channels;
 
     let stream = device
-        .build_output_stream(&stream_config, data_cb, err_cb, None)
+        .build_output_stream(stream_config, data_cb, err_cb, None)
         .map_err(LingfengError::from)?;
 
     Ok((stream, sample_rate, channels))
@@ -66,5 +60,5 @@ pub fn pause_stream(stream: &Stream) {
 
 /// 由采样率构造 [`SampleRate`]（占位辅助）。
 pub fn sample_rate(rate: u32) -> SampleRate {
-    SampleRate(rate)
+    rate
 }

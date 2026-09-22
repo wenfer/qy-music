@@ -101,9 +101,7 @@ impl Biquad {
 
     /// 处理单样本并返回输出样本。
     pub fn process(&mut self, x: f32) -> f32 {
-        let y = self.coeff.b0 * x
-            + self.coeff.b1 * self.x1
-            + self.coeff.b2 * self.x2
+        let y = self.coeff.b0 * x + self.coeff.b1 * self.x1 + self.coeff.b2 * self.x2
             - self.coeff.a1 * self.y1
             - self.coeff.a2 * self.y2;
         self.x2 = self.x1;
@@ -206,8 +204,7 @@ mod tests {
         let n_im = coeff.b1 * im1 + coeff.b2 * im2;
         let d_re = 1.0 + coeff.a1 * re1 + coeff.a2 * re2;
         let d_im = coeff.a1 * im1 + coeff.a2 * im2;
-        let mag = (n_re * n_re + n_im * n_im).sqrt() / (d_re * d_re + d_im * d_im).sqrt();
-        mag
+        (n_re * n_re + n_im * n_im).sqrt() / (d_re * d_re + d_im * d_im).sqrt()
     }
 
     #[test]
@@ -232,8 +229,14 @@ mod tests {
         // 0 dB 峰值滤波器的分子系数等于分母系数（b0=1, b1=a1, b2=a2），
         // 使传递函数 H(z) ≡ 1（幅度与相位均不变，为恒等滤波器）。
         assert!((coeff.b0 - 1.0).abs() < 1e-5);
-        assert!((coeff.b1 - coeff.a1).abs() < 1e-5, "0dB 峰值应为恒等：b1==a1");
-        assert!((coeff.b2 - coeff.a2).abs() < 1e-5, "0dB 峰值应为恒等：b2==a2");
+        assert!(
+            (coeff.b1 - coeff.a1).abs() < 1e-5,
+            "0dB 峰值应为恒等：b1==a1"
+        );
+        assert!(
+            (coeff.b2 - coeff.a2).abs() < 1e-5,
+            "0dB 峰值应为恒等：b2==a2"
+        );
     }
 
     #[test]
@@ -256,7 +259,11 @@ mod tests {
         let mut chain = DspChain::from_equalizer(&eq, 48000.0);
         let frame = vec![0.5f32, 0.0, -0.25, 0.0];
         let out = chain.process(&frame);
-        assert!((out[0] - 1.0).abs() < 1e-2, "主增益 +6dB 应≈×2，实际 {}", out[0]);
+        assert!(
+            (out[0] - 1.0).abs() < 1e-2,
+            "主增益 +6dB 应≈×2，实际 {}",
+            out[0]
+        );
         assert!((out[2] - (-0.5)).abs() < 1e-2);
     }
 
@@ -340,7 +347,10 @@ mod tests {
         let frame = vec![0.2f32, -0.4, 0.6, -0.8];
         let out = chain.process(&frame);
         for (a, b) in frame.iter().zip(out.iter()) {
-            assert!((a - b).abs() < 1e-5, "EQ 关闭应旁路（含主增益），{a} vs {b}");
+            assert!(
+                (a - b).abs() < 1e-5,
+                "EQ 关闭应旁路（含主增益），{a} vs {b}"
+            );
         }
     }
 

@@ -95,8 +95,7 @@ impl Settings {
     pub fn save(&self) -> Result<()> {
         persist::ensure_dirs()?;
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(persist::settings_path(), json)
-            .map_err(crate::error::LingfengError::Io)?;
+        std::fs::write(persist::settings_path(), json).map_err(crate::error::LingfengError::Io)?;
         Ok(())
     }
 }
@@ -167,7 +166,13 @@ mod tests {
     #[test]
     fn window_size_defaults_to_340x640() {
         let s = Settings::default();
-        assert_eq!(s.window_size, WindowSize { width: 340.0, height: 640.0 });
+        assert_eq!(
+            s.window_size,
+            WindowSize {
+                width: 340.0,
+                height: 640.0
+            }
+        );
     }
 
     #[test]
@@ -183,10 +188,12 @@ mod tests {
 
     #[test]
     fn window_size_roundtrip() {
-        let mut s = Settings::default();
-        s.window_size = WindowSize {
-            width: 500.0,
-            height: 800.0,
+        let s = Settings {
+            window_size: WindowSize {
+                width: 500.0,
+                height: 800.0,
+            },
+            ..Default::default()
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
@@ -212,8 +219,7 @@ mod tests {
 
     #[test]
     fn unknown_fields_are_ignored() {
-        let mut v: serde_json::Value =
-            serde_json::to_value(Settings::default()).unwrap();
+        let mut v: serde_json::Value = serde_json::to_value(Settings::default()).unwrap();
         v.as_object_mut()
             .unwrap()
             .insert("future_field".to_string(), serde_json::json!(42));

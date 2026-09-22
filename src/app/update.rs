@@ -6,8 +6,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use iced::{Task, window};
 use iced::window::Id as WindowId;
+use iced::{window, Task};
 
 use crate::app::message::AppMessage;
 use crate::audio::{AudioEvent, EqPreset, PlaybackState};
@@ -26,6 +26,7 @@ impl crate::app::state::AppState {
             AppMessage::Pause => {
                 self.engine.pause();
                 self.player.state = PlaybackState::Paused;
+                self.spectrum.zero();
                 Task::none()
             }
             AppMessage::Next => self.advance(false),
@@ -179,7 +180,7 @@ impl crate::app::state::AppState {
                 Task::none()
             }
             AppMessage::WindowResized(id, w, h) => {
-                if self.main_window_id == Some(id) {
+                if self.main_window_id == Some(id) && w >= 100.0 && h >= 100.0 {
                     self.settings.window_size.width = w;
                     self.settings.window_size.height = h;
                     self.window_size_dirty = true;
@@ -204,6 +205,7 @@ impl crate::app::state::AppState {
             PlaybackState::Playing => {
                 self.engine.pause();
                 self.player.state = PlaybackState::Paused;
+                self.spectrum.zero();
             }
             PlaybackState::Paused => {
                 self.engine.resume();
@@ -254,8 +256,20 @@ impl crate::app::state::AppState {
                 self.player.position = p;
                 self.player.duration = d;
             }
-            AudioEvent::Spectrum(sd) => {
+            AudioEvent::Spectrum(mut sd) => {
                 if self.player.state == PlaybackState::Playing && !self.player.muted {
+                    // 双阶阻尼平滑律动（Classic Winamp / 千千静听 经典手感）：
+                    // 升起时稳健追随（Attack: 0.28），平滑消除高频毛刺与抽搐跳跃；
+                    // 跌落时模拟机械重力恒速滑落（Decay: 0.038/frame @ 15FPS），如羽毛般温润沉浮
+                    for (curr, prev) in sd.bands.iter_mut().zip(self.spectrum.bands.iter()) {
+                        let target = *curr;
+                        let next = if target > *prev {
+                            *prev + (target - *prev) * 0.28
+                        } else {
+                            (*prev - 0.038).max(target)
+                        };
+                        *curr = next.clamp(0.0, 1.0);
+                    }
                     self.spectrum = sd;
                 } else {
                     self.spectrum.zero();
@@ -328,7 +342,21 @@ impl crate::app::state::AppState {
     // ── 窗口辅助 ──
 
     fn enter_mini_mode(&mut self) -> Task<AppMessage> {
-        if self.mini_window_id.is_none() {
+        self.settings.mini_mode = true;
+        self.save_settings();
+
+        let mut tasks = Vec::new();
+
+        // 隐藏主窗口，保持仅显示迷你窗口
+        if let Some(main_id) = self.main_window_id {
+            tasks.push(window::set_mode(main_id, window::Mode::Hidden));
+        }
+
+        // 打开或显示迷你窗口并置顶聚焦
+        if let Some(id) = self.mini_window_id {
+            tasks.push(window::set_mode(id, window::Mode::Windowed));
+            tasks.push(window::gain_focus(id));
+        } else {
             let (w, h) = self.skin.layout.mini_size;
             let (id, task) = window::open(window::Settings {
                 size: iced::Size::new(w as f32, h as f32),
@@ -338,32 +366,43 @@ impl crate::app::state::AppState {
                 ..Default::default()
             });
             self.mini_window_id = Some(id);
-            return task.map(|_| AppMessage::Noop);
+            tasks.push(task.map(|_| AppMessage::Noop));
+            tasks.push(window::gain_focus(id));
         }
-        Task::none()
+
+        Task::batch(tasks)
     }
 
     fn exit_mini_mode(&mut self) -> Task<AppMessage> {
-        if let Some(id) = self.mini_window_id {
-            self.mini_window_id = None;
-            return window::close(id);
-        }
-        Task::none()
+        self.show_main_window()
     }
 
     fn show_main_window(&mut self) -> Task<AppMessage> {
+        self.settings.mini_mode = false;
+        self.save_settings();
+
+        let mut tasks = Vec::new();
+
+        // 退出迷你模式：关闭迷你窗口
+        if let Some(id) = self.mini_window_id.take() {
+            tasks.push(window::close(id));
+        }
+
         if let Some(id) = self.main_window_id {
-            // 取消隐藏（恢复常规窗口模式）
-            window::change_mode(id, window::Mode::Windowed)
+            // 取消主窗口隐藏并请求前台焦点
+            tasks.push(window::set_mode(id, window::Mode::Windowed));
+            tasks.push(window::gain_focus(id));
         } else {
-            // 主窗口已被销毁：重新打开（尺寸取持久化值，T11）
+            // 主窗口已被销毁：重新打开（尺寸取持久化值，T11）并聚焦
             let (id, task) = window::open(crate::app::main_window_settings((
                 self.settings.window_size.width,
                 self.settings.window_size.height,
             )));
             self.main_window_id = Some(id);
-            task.map(|_| AppMessage::Noop)
+            tasks.push(task.map(|_| AppMessage::Noop));
+            tasks.push(window::gain_focus(id));
         }
+        Task::batch(tasks)
     }
 
     fn quit(&mut self) -> Task<AppMessage> {
@@ -375,9 +414,9 @@ impl crate::app::state::AppState {
     }
 
     fn on_window_close(&mut self, id: WindowId) -> Task<AppMessage> {
+        // 关闭迷你窗口：还原并显示主窗口
         if self.mini_window_id == Some(id) {
-            self.mini_window_id = None;
-            return window::close(id);
+            return self.show_main_window();
         }
         if self.mini_lyrics_id == Some(id) {
             self.mini_lyrics_id = None;
@@ -389,7 +428,7 @@ impl crate::app::state::AppState {
             // 强制落盘窗口尺寸（T11），再隐藏（托盘「显示主窗口」可再次恢复）
             self.window_size_dirty = false;
             self.save_settings();
-            window::change_mode(id, window::Mode::Hidden)
+            window::set_mode(id, window::Mode::Hidden)
         } else {
             self.window_size_dirty = false;
             self.save_settings();
@@ -497,5 +536,35 @@ mod tests {
         ));
         assert!(!state.window_size_dirty);
         assert_eq!(state.settings.window_size.width, 360.0);
+    }
+
+    #[test]
+    fn mini_mode_enter_and_exit_updates_state() {
+        let mut state = AppState::default();
+        state.settings.mini_mode = false;
+        state.mini_window_id = None;
+
+        let _ = state.update(AppMessage::EnterMiniMode);
+        assert!(state.settings.mini_mode);
+        assert!(state.mini_window_id.is_some());
+
+        let _ = state.update(AppMessage::ExitMiniMode);
+        assert!(!state.settings.mini_mode);
+        assert!(state.mini_window_id.is_none());
+    }
+
+    #[test]
+    fn mini_mode_close_restores_main_window_state() {
+        let mut state = AppState::default();
+        state.settings.mini_mode = false;
+        state.mini_window_id = None;
+
+        let _ = state.update(AppMessage::EnterMiniMode);
+        let mini_id = state.mini_window_id.expect("mini window opened");
+        assert!(state.settings.mini_mode);
+
+        let _ = state.update(AppMessage::WindowClose(mini_id));
+        assert!(!state.settings.mini_mode);
+        assert!(state.mini_window_id.is_none());
     }
 }

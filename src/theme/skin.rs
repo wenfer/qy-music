@@ -83,11 +83,17 @@ impl Skin {
         ];
         for c in colors {
             if !c.starts_with('#') || c.len() != 7 {
-                return Err(LingfengError::other(format!("皮肤 {} 配色非法: {c}", self.id)));
+                return Err(LingfengError::other(format!(
+                    "皮肤 {} 配色非法: {c}",
+                    self.id
+                )));
             }
         }
         if self.layout.density <= 0.0 {
-            return Err(LingfengError::other(format!("皮肤 {} density 必须为正", self.id)));
+            return Err(LingfengError::other(format!(
+                "皮肤 {} density 必须为正",
+                self.id
+            )));
         }
         Ok(())
     }
