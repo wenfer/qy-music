@@ -319,4 +319,4 @@ jobs:
             all_artifacts/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'rc') }}
