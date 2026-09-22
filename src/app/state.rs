@@ -58,6 +58,8 @@ pub struct AppState {
     pub main_tab: crate::app::message::MainTab,
     /// 均衡器面板是否展开（T14，默认收起）。
     pub eq_expanded: bool,
+    /// DSP 音效增强配置 (3D拓宽/低音/人声通透)。
+    pub effects: crate::audio::AudioEffects,
     /// 窗口尺寸是否有待落盘的变更（T11，1s tick 落盘）。
     pub(crate) window_size_dirty: bool,
 }
@@ -136,6 +138,9 @@ impl AppState {
             (None, None)
         };
 
+        let effects = settings.effects;
+        handle.set_audio_effects(effects);
+
         let state = Self {
             playlist,
             player,
@@ -154,6 +159,7 @@ impl AppState {
             gain_clipped: false,
             main_tab: crate::app::message::MainTab::default(),
             eq_expanded: false,
+            effects,
             window_size_dirty: false,
         };
         let mut tasks = vec![open_task.map(|_| AppMessage::Noop)];

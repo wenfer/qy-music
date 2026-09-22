@@ -7,6 +7,7 @@
 
 pub mod decoder;
 pub mod dsp;
+pub mod effects;
 pub mod engine;
 pub mod equalizer;
 pub mod events;
@@ -15,6 +16,7 @@ pub mod resampler;
 
 pub use decoder::SymphoniaDecoder;
 pub use dsp::{Biquad, BiquadCoeff, DspChain};
+pub use effects::{AudioEffects, AudioEffectsProcessor};
 pub use engine::{PlaybackEngine, PlaybackEngineHandle};
 pub use equalizer::{EqPreset, Equalizer};
 pub use events::{AudioEvent, EngineCommand};

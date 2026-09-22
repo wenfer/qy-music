@@ -69,6 +69,20 @@ pub enum AppMessage {
     /// 设置主增益（dB）。
     SetMasterGain(f32),
 
+    // ── DSP 音效增强 ──
+    /// 切换 3D 立体声拓宽开关。
+    ToggleStereoWidener,
+    /// 设置 3D 立体声拓宽强度 (0.0..=1.0)。
+    SetStereoWidenerLevel(f32),
+    /// 切换动态低音增强开关。
+    ToggleBassBoost,
+    /// 设置动态低音增强强度 (0.0..=1.0)。
+    SetBassBoostLevel(f32),
+    /// 切换人声水晶通透开关。
+    ToggleVocalCrystalizer,
+    /// 设置人声水晶通透强度 (0.0..=1.0)。
+    SetVocalCrystalizerLevel(f32),
+
     // ── 皮肤 / 窗口 ──
     /// 切换皮肤（按 id）。
     SetSkin(String),

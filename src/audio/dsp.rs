@@ -120,7 +120,9 @@ impl Biquad {
     }
 }
 
-/// DSP 链：多段 Biquad 串联 + 链尾主增益。
+use crate::audio::effects::{soft_limit, AudioEffects, AudioEffectsProcessor};
+
+/// DSP 链：多段 Biquad 串联 + 链尾音效处理器 (3D拓宽/低音/人声/软限幅) + 主增益。
 ///
 /// 内部布局：`filters` 长度为 `声道数 × 段数`（默认立体声 2×10）。
 /// 索引规则：`filters[ch * n_bands + band]` 为第 `ch` 声道第 `band` 段滤波器的状态。
@@ -132,13 +134,22 @@ pub struct DspChain {
     pub master_gain: f32,
     /// 声道数。
     channels: usize,
+    /// 采样率。
+    sample_rate: f32,
+    /// 音效配置参数。
+    pub effects: AudioEffects,
+    /// 运行时音效处理器（延迟线、动态滤波）。
+    effects_processor: AudioEffectsProcessor,
 }
 
 impl DspChain {
-    /// 由均衡器参数构造 DSP 链。
-    ///
-    /// 假设立体声（2 声道），按 `Equalizer` 的 10 段增益 + 主增益生成系数。
+    /// 由均衡器参数构造 DSP 链（默认音效关闭）。
     pub fn from_equalizer(eq: &Equalizer, sample_rate: f32) -> Self {
+        Self::new(eq, AudioEffects::default(), sample_rate)
+    }
+
+    /// 构造包含 EQ 与指定音效的完整 DSP 链。
+    pub fn new(eq: &Equalizer, effects: AudioEffects, sample_rate: f32) -> Self {
         let channels = 2usize;
         let coeffs = eq.to_biquad_coeffs(sample_rate);
         let mut filters = Vec::with_capacity(channels * coeffs.len());
@@ -152,16 +163,33 @@ impl DspChain {
         } else {
             1.0
         };
+        let mut effects_processor = AudioEffectsProcessor::new(sample_rate);
+        effects_processor.update_coefficients(&effects);
+
         Self {
             filters,
             master_gain,
             channels,
+            sample_rate,
+            effects,
+            effects_processor,
         }
+    }
+
+    /// 获取 DSP 链采样率 (Hz)。
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// 实时更新音效参数。
+    pub fn update_effects(&mut self, effects: AudioEffects) {
+        self.effects = effects;
+        self.effects_processor.update_coefficients(&self.effects);
     }
 
     /// 处理一帧（交错 `f32`，默认立体声）并返回处理后的帧。
     ///
-    /// 每个声道的样本依次过所有 Biquad 段，再乘主增益；输入 / 输出长度一致。
+    /// 流程：Biquad EQ -> 主增益 -> DSP 音效 (3D/低音/人声) -> 软限幅抗爆音。
     pub fn process(&mut self, frame: &[f32]) -> Vec<f32> {
         let n_ch = self.channels;
         let n_bands = if self.filters.is_empty() {
@@ -180,6 +208,17 @@ impl DspChain {
             }
             out[i] = v * self.master_gain;
         }
+
+        // 串接 DSP 音效增强链（3D 拓宽、低音增强、人声通透）与防爆音限幅
+        if self.channels == 2 {
+            self.effects_processor
+                .process_interleaved(&mut out, &self.effects);
+        } else {
+            for s in out.iter_mut() {
+                *s = soft_limit(*s);
+            }
+        }
+
         out
     }
 
@@ -188,6 +227,7 @@ impl DspChain {
         for f in &mut self.filters {
             f.reset();
         }
+        self.effects_processor.reset();
     }
 }
 

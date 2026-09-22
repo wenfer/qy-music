@@ -24,7 +24,7 @@ use crate::audio::dsp::DspChain;
 use crate::audio::events::AudioEvent;
 use crate::audio::output;
 use crate::audio::resampler::RubatoResampler;
-use crate::audio::{AtomicF32, EngineCommand, Equalizer};
+use crate::audio::{AtomicF32, AudioEffects, EngineCommand, Equalizer};
 use crate::error::Result;
 use crate::playlist::Track;
 use crate::visualizer::fft::SpectrumAnalyzer;
@@ -113,6 +113,11 @@ impl PlaybackEngineHandle {
     /// 实时替换均衡器参数。
     pub fn set_equalizer(&self, eq: Equalizer) {
         let _ = self.cmd_tx.send(EngineCommand::SetEqualizer(eq));
+    }
+
+    /// 实时替换 DSP 音效参数 (3D拓宽/低音/人声通透)。
+    pub fn set_audio_effects(&self, effects: AudioEffects) {
+        let _ = self.cmd_tx.send(EngineCommand::SetAudioEffects(effects));
     }
 
     /// 设置音量（0.0..=1.0），同步更新共享原子量（回调即时生效）。
@@ -449,8 +454,13 @@ fn decode_loop(
                     }
                 }
                 EngineCommand::SetEqualizer(eq) => {
-                    let new_chain = DspChain::from_equalizer(&eq, device_rate as f32);
-                    *dsp.lock().unwrap() = new_chain;
+                    let mut guard = dsp.lock().unwrap();
+                    let current_effects = guard.effects;
+                    let new_chain = DspChain::new(&eq, current_effects, device_rate as f32);
+                    *guard = new_chain;
+                }
+                EngineCommand::SetAudioEffects(effects) => {
+                    dsp.lock().unwrap().update_effects(effects);
                 }
                 EngineCommand::SetVolume(v) => {
                     volume.store(v, Ordering::Relaxed);

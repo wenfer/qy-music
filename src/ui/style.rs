@@ -284,6 +284,72 @@ pub fn pill_tab_button_style(
     }
 }
 
+/// DSP 音效切换胶囊按钮（开启时显眼高亮，关闭时克制内敛）。
+pub fn effect_toggle_button_style(
+    palette: Palette,
+    is_active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        if is_active {
+            button::Style {
+                background: Some(Background::Color(Color::from_rgba(
+                    palette.accent.r,
+                    palette.accent.g,
+                    palette.accent.b,
+                    0.20,
+                ))),
+                text_color: palette.accent,
+                border: Border {
+                    color: Color::from_rgba(
+                        palette.accent.r,
+                        palette.accent.g,
+                        palette.accent.b,
+                        0.45,
+                    ),
+                    width: 1.0,
+                    radius: 5.0.into(),
+                },
+                shadow: Shadow {
+                    color: Color::from_rgba(
+                        palette.accent.r,
+                        palette.accent.g,
+                        palette.accent.b,
+                        0.15,
+                    ),
+                    offset: Vector::new(0.0, 1.0),
+                    blur_radius: 3.0,
+                },
+                ..Default::default()
+            }
+        } else {
+            match status {
+                button::Status::Hovered => button::Style {
+                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))),
+                    text_color: palette.text_main,
+                    border: Border {
+                        color: Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                        width: 1.0,
+                        radius: 5.0.into(),
+                    },
+                    shadow: Shadow::default(),
+                    ..Default::default()
+                },
+                _ => button::Style {
+                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.02))),
+                    text_color: palette.text_muted,
+                    border: Border {
+                        color: Color::from_rgba(1.0, 1.0, 1.0, 0.04),
+                        width: 1.0,
+                        radius: 5.0.into(),
+                    },
+                    shadow: Shadow::default(),
+                    ..Default::default()
+                },
+            }
+        }
+    }
+}
+
 /// 极简幽灵小按键（+文件、清空、小功能入口等，无突兀黑方框）。
 pub fn subtle_button_style(palette: Palette) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_theme, status| match status {

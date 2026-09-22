@@ -55,6 +55,9 @@ pub struct Settings {
     /// 自动取默认 340×640，不破坏既有配置文件）。
     #[serde(default = "default_window_size")]
     pub window_size: WindowSize,
+    /// DSP 音效配置（字段级 `serde(default)`，兼容旧版本）。
+    #[serde(default)]
+    pub effects: crate::audio::AudioEffects,
 }
 
 /// `window_size` 的 serde 默认值函数。
@@ -74,6 +77,7 @@ impl Default for Settings {
             volume: 1.0,
             lyric_offset_ms: 0,
             window_size: WindowSize::default(),
+            effects: crate::audio::AudioEffects::default(),
         }
     }
 }
@@ -153,10 +157,28 @@ mod tests {
                 width: 400.0,
                 height: 720.0,
             },
+            effects: crate::audio::AudioEffects {
+                stereo_widener_enabled: true,
+                stereo_widener_level: 0.8,
+                bass_boost_enabled: true,
+                bass_boost_level: 0.7,
+                vocal_crystalizer_enabled: true,
+                vocal_crystalizer_level: 0.6,
+            },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn old_json_without_effects_still_parses() {
+        let s = Settings::default();
+        let mut v = serde_json::to_value(&s).unwrap();
+        v.as_object_mut().unwrap().remove("effects").unwrap();
+        let back: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(back.effects, crate::audio::AudioEffects::default());
+        assert_eq!(back, Settings::default());
     }
 
     // ──────────────────────────────────────────────────────────────

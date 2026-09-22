@@ -135,6 +135,50 @@ impl crate::app::state::AppState {
                 Task::none()
             }
 
+            // ── DSP 音效增强 ──
+            AppMessage::ToggleStereoWidener => {
+                self.effects.stereo_widener_enabled = !self.effects.stereo_widener_enabled;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetStereoWidenerLevel(lvl) => {
+                self.effects.stereo_widener_level = lvl.clamp(0.0, 1.0);
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleBassBoost => {
+                self.effects.bass_boost_enabled = !self.effects.bass_boost_enabled;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetBassBoostLevel(lvl) => {
+                self.effects.bass_boost_level = lvl.clamp(0.0, 1.0);
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::ToggleVocalCrystalizer => {
+                self.effects.vocal_crystalizer_enabled = !self.effects.vocal_crystalizer_enabled;
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+            AppMessage::SetVocalCrystalizerLevel(lvl) => {
+                self.effects.vocal_crystalizer_level = lvl.clamp(0.0, 1.0);
+                self.engine.set_audio_effects(self.effects);
+                self.settings.effects = self.effects;
+                self.save_settings();
+                Task::none()
+            }
+
             // ── 皮肤 / 窗口 ──
             AppMessage::SetSkin(id) => {
                 if let Some(skin) = crate::theme::Skin::builtin_by_id(&id) {
