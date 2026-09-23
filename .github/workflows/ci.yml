@@ -1,13 +1,6 @@
 name: CI
 
 on:
-  push:
-    tags:
-      - 'v*'
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '.gitignore'
   pull_request:
     branches:
       - main
