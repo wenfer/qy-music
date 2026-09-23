@@ -64,6 +64,35 @@ cargo test --lib --no-default-features
 cargo test
 ```
 
+## 📥 安装与下载
+
+从 [GitHub Releases](https://github.com/wenfer/qy-music/releases) 下载对应平台的安装包：
+
+| 平台 | 安装包格式 | 说明 |
+| :--- | :--- | :--- |
+| **Windows** | `.exe` (安装向导) / `.zip` (免安装便携包) | 支持 Windows 10/11 (x86_64, arm64) |
+| **macOS** | `.dmg` (拖入应用程序) / `.tar.gz` | 支持 Universal 通用双架构、Apple Silicon (arm64) 与 Intel (x86_64) |
+| **Linux** | `.deb` (Debian/Ubuntu) / `.tar.gz` | 支持 amd64 与 arm64 |
+
+### 🍎 macOS 用户提示（提示“文件已损坏，无法打开”解决办法）
+
+由于本播放器为开源个人项目，未购买苹果年费开发者证书，macOS Gatekeeper（看门狗）安全机制在检测到从网页下载的无证书应用时，可能会提示 **“已损坏，无法打开。你应该将它移到废纸篓”** 或阻止运行。这属于系统的外部应用保护机制，并非安装包真实损坏。
+
+**解决方法（任选其一）：**
+
+1. **终端命令移除隔离标记（最彻底、推荐）**：
+   将 `Lingfeng.app` 拖入「应用程序」后，打开 Mac 自带的「终端」(Terminal)，执行以下命令：
+   ```bash
+   sudo xattr -cr /Applications/Lingfeng.app
+   ```
+   *(如果提示签名问题，可再执行 `sudo codesign --force --deep --sign - /Applications/Lingfeng.app`)*
+   执行完成后即可直接双击正常启动！
+
+2. **系统设置中允许**：
+   - 打开「系统设置」→「隐私与安全性」；
+   - 滚动到「安全性」区域，会看到提示：“已阻止使用‘Lingfeng’，因为来自身份不明的开发者”；
+   - 点击「仍要打开」，输入系统开机密码即可。
+
 ## 📄 许可证
 
 - 源码协议：MIT License

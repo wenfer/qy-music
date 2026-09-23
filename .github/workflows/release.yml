@@ -306,6 +306,7 @@ jobs:
           # 1. ARM64 打包
           mkdir -p "dist/lingfeng-macos-arm64"
           cp target/aarch64-apple-darwin/release/lingfeng "dist/lingfeng-macos-arm64/"
+          codesign --force -s - "dist/lingfeng-macos-arm64/lingfeng" || true
           cp README.md LICENSE "dist/lingfeng-macos-arm64/"
           PKG_ARM="lingfeng-${RELEASE_TAG}-macos-arm64.tar.gz"
           tar -czvf "$PKG_ARM" -C dist "lingfeng-macos-arm64"
@@ -315,6 +316,7 @@ jobs:
           # 2. x86_64 打包
           mkdir -p "dist/lingfeng-macos-x86_64"
           cp target/x86_64-apple-darwin/release/lingfeng "dist/lingfeng-macos-x86_64/"
+          codesign --force -s - "dist/lingfeng-macos-x86_64/lingfeng" || true
           cp README.md LICENSE "dist/lingfeng-macos-x86_64/"
           PKG_X86="lingfeng-${RELEASE_TAG}-macos-x86_64.tar.gz"
           tar -czvf "$PKG_X86" -C dist "lingfeng-macos-x86_64"
@@ -326,6 +328,7 @@ jobs:
           lipo -create -output "dist/lingfeng-macos-universal/lingfeng" \
             target/aarch64-apple-darwin/release/lingfeng \
             target/x86_64-apple-darwin/release/lingfeng
+          codesign --force -s - "dist/lingfeng-macos-universal/lingfeng" || true
           cp README.md LICENSE "dist/lingfeng-macos-universal/"
           PKG_UNI="lingfeng-${RELEASE_TAG}-macos-universal.tar.gz"
           tar -czvf "$PKG_UNI" -C dist "lingfeng-macos-universal"
@@ -346,6 +349,9 @@ jobs:
             chmod +x "${app_dir}/Contents/MacOS/lingfeng"
             cp assets/icons/icon.icns "${app_dir}/Contents/Resources/AppIcon.icns"
             sed "s/__VERSION__/${RELEASE_TAG#v}/g" packaging/macos/Info.plist > "${app_dir}/Contents/Info.plist"
+
+            # 执行本地 ad-hoc 签名，防止 Apple Silicon 报签名损坏
+            codesign --force --deep -s - "${app_dir}"
 
             ln -s /Applications "${staging_dir}/Applications"
             hdiutil create -volname "Lingfeng" -srcfolder "${staging_dir}" -ov -format UDZO "${dmg_name}"
