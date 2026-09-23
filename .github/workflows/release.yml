@@ -115,18 +115,20 @@ jobs:
           cp README.md LICENSE "$PKG_DIR/usr/share/doc/lingfeng/"
 
           CLEAN_VER="${RELEASE_TAG#v}"
-          cat << EOF > "$PKG_DIR/DEBIAN/control"
-Package: lingfeng
-Version: ${CLEAN_VER}
-Section: sound
-Priority: optional
-Architecture: ${DEB_ARCH}
-Maintainer: wenfer
-Depends: libasound2, libgtk-3-0, libayatana-appindicator3-1, libxdo3
-Description: 聆风 (Lingfeng) - 跨平台复古音乐播放器
- 仿「千千静听」经典交互范式的跨平台桌面音乐播放器。
- 超低资源开销、复古怀旧的竖窄单列操作手感、纯粹高保真的音频回放。
-EOF
+          cat << 'EOF' > "$PKG_DIR/DEBIAN/control"
+          Package: lingfeng
+          Version: __VERSION__
+          Section: sound
+          Priority: optional
+          Architecture: __ARCH__
+          Maintainer: wenfer
+          Depends: libasound2, libgtk-3-0, libayatana-appindicator3-1, libxdo3
+          Description: Lingfeng - Classic Retro Music Player
+           Modern retro music player inspired by TTPlayer.
+          EOF
+          sed -i 's/^[[:space:]]*//' "$PKG_DIR/DEBIAN/control"
+          sed -i "s/__VERSION__/${CLEAN_VER}/g" "$PKG_DIR/DEBIAN/control"
+          sed -i "s/__ARCH__/${DEB_ARCH}/g" "$PKG_DIR/DEBIAN/control"
 
           DEB_NAME="lingfeng-${RELEASE_TAG}-linux-${DEB_ARCH}.deb"
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_NAME"
