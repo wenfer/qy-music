@@ -232,10 +232,11 @@ jobs:
           $archMode = if ("${{ matrix.arch }}" -eq "arm64") { "arm64" } else { "x64compatible" }
           $setupBaseName = "lingfeng-${env:RELEASE_TAG}-${{ matrix.arch_slug }}-setup"
 
+          $absDistDir = (Resolve-Path $distDir).Path
           & $iscc `
             "/DAppVersion=${env:RELEASE_TAG}" `
             "/DProjectRoot=${pwd}" `
-            "/DSourceDir=$distDir" `
+            "/DSourceDir=$absDistDir" `
             "/DOutputDir=${pwd}\artifacts" `
             "/DOutputBaseFileName=$setupBaseName" `
             "/DArchMode=$archMode" `

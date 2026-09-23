@@ -8,7 +8,7 @@
 #endif
 
 #ifndef SourceDir
-  #define SourceDir "dist\lingfeng-windows-x86_64"
+  #define SourceDir ProjectRoot + "\dist\lingfeng-windows-x86_64"
 #endif
 
 #ifndef OutputDir
