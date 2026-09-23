@@ -12,7 +12,7 @@
 #endif
 
 #ifndef OutputDir
-  #define OutputDir "artifacts"
+  #define OutputDir ProjectRoot + "\artifacts"
 #endif
 
 #ifndef OutputBaseFileName
@@ -48,7 +48,6 @@ ArchitecturesInstallIn64BitMode={#ArchMode}
 UninstallDisplayIcon={app}\icon.ico
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]

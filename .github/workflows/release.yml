@@ -115,20 +115,15 @@ jobs:
           cp README.md LICENSE "$PKG_DIR/usr/share/doc/lingfeng/"
 
           CLEAN_VER="${RELEASE_TAG#v}"
-          cat << 'EOF' > "$PKG_DIR/DEBIAN/control"
-          Package: lingfeng
-          Version: __VERSION__
-          Section: sound
-          Priority: optional
-          Architecture: __ARCH__
-          Maintainer: wenfer
-          Depends: libasound2, libgtk-3-0, libayatana-appindicator3-1, libxdo3
-          Description: Lingfeng - Classic Retro Music Player
-           Modern retro music player inspired by TTPlayer.
-          EOF
-          sed -i 's/^[[:space:]]*//' "$PKG_DIR/DEBIAN/control"
-          sed -i "s/__VERSION__/${CLEAN_VER}/g" "$PKG_DIR/DEBIAN/control"
-          sed -i "s/__ARCH__/${DEB_ARCH}/g" "$PKG_DIR/DEBIAN/control"
+          echo "Package: lingfeng" > "$PKG_DIR/DEBIAN/control"
+          echo "Version: ${CLEAN_VER}" >> "$PKG_DIR/DEBIAN/control"
+          echo "Section: sound" >> "$PKG_DIR/DEBIAN/control"
+          echo "Priority: optional" >> "$PKG_DIR/DEBIAN/control"
+          echo "Architecture: ${DEB_ARCH}" >> "$PKG_DIR/DEBIAN/control"
+          echo "Maintainer: wenfer" >> "$PKG_DIR/DEBIAN/control"
+          echo "Depends: libasound2, libgtk-3-0, libayatana-appindicator3-1, libxdo3" >> "$PKG_DIR/DEBIAN/control"
+          echo "Description: Lingfeng - Classic Retro Music Player" >> "$PKG_DIR/DEBIAN/control"
+          echo " Modern retro music player inspired by TTPlayer." >> "$PKG_DIR/DEBIAN/control"
 
           DEB_NAME="lingfeng-${RELEASE_TAG}-linux-${DEB_ARCH}.deb"
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_NAME"
@@ -241,7 +236,7 @@ jobs:
             "/DAppVersion=${env:RELEASE_TAG}" `
             "/DProjectRoot=${pwd}" `
             "/DSourceDir=$distDir" `
-            "/DOutputDir=artifacts" `
+            "/DOutputDir=${pwd}\artifacts" `
             "/DOutputBaseFileName=$setupBaseName" `
             "/DArchMode=$archMode" `
             packaging\windows\installer.iss
