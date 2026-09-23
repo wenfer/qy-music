@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Lingfeng
+Name[zh_CN]=聆风
+Comment=Classic Retro Music Player
+Comment[zh_CN]=仿千千静听经典交互范式的跨平台桌面音乐播放器
+Exec=lingfeng %F
+Icon=lingfeng
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/x-wav;audio/ogg;
+Keywords=music;player;retro;千千静听;音频;播放器;
+StartupWMClass=lingfeng
