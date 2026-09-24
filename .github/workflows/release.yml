@@ -121,7 +121,7 @@ jobs:
           echo "Priority: optional" >> "$PKG_DIR/DEBIAN/control"
           echo "Architecture: ${DEB_ARCH}" >> "$PKG_DIR/DEBIAN/control"
           echo "Maintainer: wenfer" >> "$PKG_DIR/DEBIAN/control"
-          echo "Depends: libasound2, libgtk-3-0, libayatana-appindicator3-1, libxdo3" >> "$PKG_DIR/DEBIAN/control"
+          echo "Depends: libasound2 | libasound2t64" >> "$PKG_DIR/DEBIAN/control"
           echo "Description: Lingfeng - Classic Retro Music Player" >> "$PKG_DIR/DEBIAN/control"
           echo " Modern retro music player inspired by TTPlayer." >> "$PKG_DIR/DEBIAN/control"
 

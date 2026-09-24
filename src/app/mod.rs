@@ -32,9 +32,21 @@ const MIN_WINDOW_SIZE: (f32, f32) = (320.0, 520.0);
 /// - 订阅音频 / 托盘 / 窗口关闭请求 / 窗口尺寸变化 / 落盘 tick；
 /// - 启动系统托盘（失败仅告警，不影响主界面）。
 pub fn run() -> iced::Result {
-    // 启动系统托盘（最佳努力：失败仅告警）。
-    if let Err(e) = crate::ui::tray::build_tray() {
-        log::warn!("初始化系统托盘失败（不影响主界面）: {e}");
+    // 启动系统托盘（最佳努力：即便环境缺失桌面托盘服务或初始化异常，也绝不影响主界面正常启动）。
+    let tray_init = std::panic::catch_unwind(std::panic::AssertUnwindSafe(crate::ui::tray::build_tray));
+    match tray_init {
+        Ok(Ok(())) => log::info!("系统托盘初始化成功"),
+        Ok(Err(e)) => log::warn!("初始化系统托盘未就绪（不影响主界面）: {e}"),
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                *s
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.as_str()
+            } else {
+                "未知异常"
+            };
+            log::warn!("初始化系统托盘异常捕获（不影响主界面）: {msg}");
+        }
     }
 
     // 注册内嵌 CJK 字体并设为全局默认（T15）：
