@@ -158,13 +158,8 @@ cargo run --release
 
 ---
 
-## 6. 核心设计参考文档索引
+## 6. 核心设计参考
 
-如需深入了解详细设计决策，可参考 `docs/` 目录下的系统文档：
-- [系统架构与实现蓝图](docs/ARCHITECTURE.md)：包含完整的技术选型背景、任务分解、内存生命周期和状态机定义。
-- [产品需求文档 (PRD)](docs/PRD.md)：包含用户故事、交互规范、快捷键与功能验收标准。
-- [系统类图 (Mermaid)](docs/class-diagram.mermaid)：完整的数据结构与 Trait 关联图。
-- [核心时序图 (Mermaid)](docs/sequence-diagram.mermaid)：包含播放链路与歌词同步链路的序列图。
 - [界面效果实机截图](docs/screenshot.png)：主窗口千千静听经典竖窄效果参考。
 
 ---

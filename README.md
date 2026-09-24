@@ -33,20 +33,6 @@
   - 系统托盘常驻（tray-icon + muda），关闭窗口最小化到托盘，支持后台快捷控制。
   - 内嵌开源中文字体（Noto Sans SC），开箱即用，无任何跨平台豆腐块 (tofu) 乱码。
 
-## 架构与分层
-
-代码采用 MVU 架构，纯逻辑与 GUI 层完全解耦：
-
-- **纯逻辑层**（音频 DSP、LRC 解析、播放列表、频谱算法、配置持久化）：脱离 GUI 独立编译与毫秒级单测。
-- **GUI 层**（`gui` feature）：基于 `iced 0.14` 的 `iced::daemon` 多窗口架构。
-
-详细设计与实现细节请参阅：
-- [系统架构与实现蓝图](docs/ARCHITECTURE.md)
-- [类图与数据模型](docs/class-diagram.mermaid)
-- [核心时序图](docs/sequence-diagram.mermaid)
-- [产品需求文档 (PRD)](docs/PRD.md)
-- [Agent 开发与协作指南](AGENTS.md)
-
 ## 安装包下载
 
 从 [GitHub Releases](https://github.com/wenfer/qy-music/releases) 下载最新发行版原生安装包：
