@@ -74,6 +74,22 @@ impl Track {
         self.is_lossless || Self::detect_lossless(&self.path)
     }
 
+    /// 是否为远程 WebDAV / 网络流媒体曲目。
+    pub fn is_remote(&self) -> bool {
+        let s = self.path.to_string_lossy();
+        s.starts_with("http://") || s.starts_with("https://") || s.starts_with("webdav://")
+    }
+
+    /// 提取远程 URL（如果属于网络资源）。
+    pub fn remote_url(&self) -> Option<&str> {
+        let s = self.path.to_str()?;
+        if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("webdav://") {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
     /// 返回格式大写简称（如 FLAC, WAV, MP3 等）。
     pub fn format_name(&self) -> &'static str {
         let ext = self

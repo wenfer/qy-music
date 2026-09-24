@@ -35,6 +35,14 @@ pub enum AudioEvent {
     Spectrum(SpectrumData),
     /// 音频规格与信号链信息。
     Format(AudioFormatInfo),
+    /// 网络流缓冲卡顿状态：true 表示正在网络卡顿缓冲中，false 表示已缓冲完毕恢复播放。
+    Buffering(bool),
+    /// 实时网络缓冲下载进度：`(已下载字节, 总字节, 进度比例 0.0..=1.0)`。
+    BufferProgress {
+        buffered_bytes: u64,
+        total_bytes: u64,
+        ratio: f32,
+    },
     /// 当前曲目播放结束。
     Ended,
     /// 音频线程发生错误（描述）。

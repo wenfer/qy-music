@@ -44,6 +44,8 @@ pub struct AppState {
     pub mini_lyrics_id: Option<WindowId>,
     /// 独立音效控制台窗口 id。
     pub effects_window_id: Option<WindowId>,
+    /// 独立 WebDAV 云端控制台窗口 id。
+    pub webdav_window_id: Option<WindowId>,
     /// 引擎命令句柄（轻量，可克隆）。
     pub engine: Arc<PlaybackEngineHandle>,
 
@@ -72,6 +74,38 @@ pub struct AppState {
     pub format_info: Option<crate::audio::events::AudioFormatInfo>,
     /// 窗口尺寸是否有待落盘的变更（T11，1s tick 落盘）。
     pub(crate) window_size_dirty: bool,
+
+    // ── WebDAV 与流媒体缓存扩展字段 ──
+    /// 是否正处于网络卡顿缓冲等待状态。
+    pub is_buffering: bool,
+    /// 当前网络下载缓冲完成比例 (0.0..=1.0)。
+    pub buffer_ratio: f32,
+    /// WebDAV 控制台当前分页。
+    pub webdav_tab: crate::app::message::WebDavTab,
+    /// 当前选中的 WebDAV 服务器下标。
+    pub selected_webdav_server: usize,
+    /// WebDAV 表单：服务器名称。
+    pub webdav_form_name: String,
+    /// WebDAV 表单：端点 URL。
+    pub webdav_form_endpoint: String,
+    /// WebDAV 表单：用户名。
+    pub webdav_form_username: String,
+    /// WebDAV 表单：密码。
+    pub webdav_form_password: String,
+    /// WebDAV 表单：是否允许自签无效 TLS 证书。
+    pub webdav_form_allow_insecure: bool,
+    /// WebDAV 连接测试状态提示。
+    pub webdav_test_status: Option<String>,
+    /// WebDAV 当前浏览路径。
+    pub webdav_current_path: String,
+    /// WebDAV 当前目录下的远端文件列表。
+    pub webdav_remote_items: Vec<crate::webdav::RemoteItem>,
+    /// WebDAV 异步操作加载中标识。
+    pub webdav_is_loading: bool,
+    /// 本地磁盘持久化缓存已占用字节数。
+    pub cache_used_bytes: u64,
+    /// 缓存操作提示状态（例如 "已清理释放 120MB"）。
+    pub cache_status_msg: Option<String>,
 }
 
 impl AppState {
@@ -162,6 +196,7 @@ impl AppState {
             mini_window_id,
             mini_lyrics_id: None,
             effects_window_id: None,
+            webdav_window_id: None,
             engine: Arc::new(handle),
             main_window_id: Some(main_window_id),
             _engine: engine,
@@ -176,6 +211,23 @@ impl AppState {
             settings,
             format_info: None,
             window_size_dirty: false,
+            is_buffering: false,
+            buffer_ratio: 1.0,
+            webdav_tab: crate::app::message::WebDavTab::default(),
+            selected_webdav_server: 0,
+            webdav_form_name: String::new(),
+            webdav_form_endpoint: "http://".to_string(),
+            webdav_form_username: String::new(),
+            webdav_form_password: String::new(),
+            webdav_form_allow_insecure: false,
+            webdav_test_status: None,
+            webdav_current_path: "/".to_string(),
+            webdav_remote_items: Vec::new(),
+            webdav_is_loading: false,
+            cache_used_bytes: crate::cache::CacheManager::new()
+                .map(|m| m.total_cache_size())
+                .unwrap_or(0),
+            cache_status_msg: None,
         };
         let mut tasks = vec![open_task.map(|_| AppMessage::Noop)];
         if let (Some(m_id), Some(m_task)) = (mini_window_id, mini_open_task) {
@@ -195,8 +247,64 @@ impl AppState {
             self.engine.play(track.clone());
             self.player.state = PlaybackState::Playing;
             self.player.duration = track.duration;
-            self.lyrics = load_for_track(&track.path);
+            if track.is_remote() {
+                self.is_buffering = true;
+                self.buffer_ratio = 0.0;
+                self.load_remote_lyrics_if_present(&track);
+            } else {
+                self.is_buffering = false;
+                self.buffer_ratio = 1.0;
+                self.lyrics = load_for_track(&track.path);
+            }
         }
+    }
+
+    /// 嗅探或加载 WebDAV 远端同名歌词。
+    pub fn load_remote_lyrics_if_present(&mut self, track: &Track) {
+        let url = track.path.to_string_lossy().to_string();
+        let lrc_url = if let Some(dot_pos) = url.rfind('.') {
+            format!("{}.lrc", &url[..dot_pos])
+        } else {
+            format!("{}.lrc", url)
+        };
+
+        // 1. 本地缓存检查
+        if let Ok(mut mgr) = crate::cache::CacheManager::new() {
+            if let Some(cached_lrc) = mgr.is_cached(&lrc_url) {
+                if let Ok(bytes) = std::fs::read(&cached_lrc) {
+                    if let Ok(lrc) = crate::lyrics::Lrc::parse(&bytes) {
+                        self.lyrics = Some(lrc);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. 异步向 WebDAV 服务器探测同名 .lrc 文件并拉取写入缓存
+        let client = crate::webdav::resolve_client_for_url(&url);
+        std::thread::spawn({
+            let lrc_url_clone = lrc_url.clone();
+            move || {
+                if client.check_exists(&lrc_url_clone) {
+                    if let Ok(text) = client.fetch_text(&lrc_url_clone) {
+                        if let Ok(mut mgr) = crate::cache::CacheManager::new() {
+                            let _ = mgr.record_complete(
+                                &lrc_url_clone,
+                                "lyrics.lrc",
+                                "lrc",
+                                text.len() as u64,
+                            );
+                            let target_path = mgr.get_complete_path(
+                                &crate::cache::CacheManager::hash_url(&lrc_url_clone),
+                                "lrc",
+                            );
+                            let _ = std::fs::write(target_path, text.as_bytes());
+                        }
+                    }
+                }
+            }
+        });
+        self.lyrics = None;
     }
 
     /// 由路径加载歌词（手动）。

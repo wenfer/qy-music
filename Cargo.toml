@@ -57,6 +57,13 @@ encoding_rs = "0.8"
 # ── 随机（随机循环模式）──
 rand = "0.10"
 
+# ── 网络与 WebDAV 流媒体 ──
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "blocking"] }
+quick-xml = "0.37"
+sha2 = "0.10"
+url = "2.5"
+base64 = "0.22"
+
 # ── 日志（调试用）──
 log = "0.4"
 env_logger = "0.11"

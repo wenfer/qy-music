@@ -13,17 +13,26 @@ pub fn playlist_view(state: &AppState) -> Element<'_, AppMessage> {
     let palette = Palette::from_skin(&state.skin);
 
     if state.playlist.tracks.is_empty() {
-        let empty_btn = button(text("＋ 添加音乐文件夹").size(12.0))
+        let empty_btn = button(text("＋ 添加本地音乐文件夹").size(11.5))
             .padding([6, 14])
             .style(subtle_button_style(palette))
             .on_press(AppMessage::AddFolder);
 
-        return container(column![empty_btn].align_x(iced::alignment::Horizontal::Center))
-            .padding(36)
-            .align_x(iced::alignment::Horizontal::Center)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
+        let webdav_btn = button(text("☁ 挂载 WebDAV 云端音乐").size(11.5))
+            .padding([6, 14])
+            .style(subtle_button_style(palette))
+            .on_press(AppMessage::ToggleWebDavWindow);
+
+        return container(
+            column![empty_btn, webdav_btn]
+                .spacing(8)
+                .align_x(iced::alignment::Horizontal::Center),
+        )
+        .padding(36)
+        .align_x(iced::alignment::Horizontal::Center)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
     }
 
     let items: Vec<Element<'_, AppMessage>> = state
@@ -108,7 +117,33 @@ pub fn playlist_view(state: &AppState) -> Element<'_, AppMessage> {
                     },
                 });
 
-            let badge_slot: Element<'_, AppMessage> = if track.is_lossless() {
+            let badge_slot: Element<'_, AppMessage> = if track.is_remote() {
+                container(
+                    container(text("云端").size(9.0).style(move |_theme: &iced::Theme| {
+                        text::Style {
+                            color: Some(palette.accent),
+                        }
+                    }))
+                    .padding([1, 4])
+                    .style(move |_theme| container::Style {
+                        background: Some(Background::Color(palette.accent_subtle)),
+                        border: Border {
+                            color: Color::from_rgba(
+                                palette.accent.r,
+                                palette.accent.g,
+                                palette.accent.b,
+                                0.40,
+                            ),
+                            width: 1.0,
+                            radius: 3.0.into(),
+                        },
+                        ..Default::default()
+                    }),
+                )
+                .width(Length::Fixed(32.0))
+                .align_x(iced::alignment::Horizontal::Center)
+                .into()
+            } else if track.is_lossless() {
                 container(
                     container(text("无损").size(9.0).style(move |_theme: &iced::Theme| {
                         text::Style {

@@ -24,12 +24,14 @@
 //! ```
 
 pub mod audio;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod lyrics;
 pub mod playlist;
 pub mod theme;
 pub mod visualizer;
+pub mod webdav;
 
 // ── GUI 相关模块（仅在 gui 特性下编译）──
 #[cfg(feature = "gui")]

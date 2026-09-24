@@ -478,49 +478,90 @@ fn decode_loop(
     let mut src_frames_consumed: u64 = 0;
     let mut last_pos_send = Instant::now();
 
+    // 远端 WebDAV 流媒体与持久化缓存状态
+    let mut cache_mgr = crate::cache::CacheManager::new().ok();
+    let mut download_state: Option<Arc<crate::cache::progressive_source::DownloadState>> = None;
+    let mut last_buffer_report = Instant::now();
+    let mut last_buffering_state = false;
+
     loop {
         // 1) 消费命令
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                EngineCommand::Play(track) => match SymphoniaDecoder::open(&track.path) {
-                    Ok((dec, sr, ch, dur)) => {
-                        src_rate = sr;
-                        src_channels = ch;
-                        resampler = if sr != device_rate {
-                            RubatoResampler::new(sr, device_rate, ch as usize).ok()
+                EngineCommand::Play(track) => {
+                    let open_res = if track.is_remote() {
+                        if let Some(ref mut mgr) = cache_mgr {
+                            let url = track.path.to_string_lossy().to_string();
+                            let client = crate::webdav::resolve_client_for_url(&url);
+                            let ext = track
+                                .path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("flac");
+                            match crate::cache::ProgressiveMediaSource::open(
+                                &client, &url, mgr, ext,
+                            ) {
+                                Ok(source) => {
+                                    download_state = Some(source.state().clone());
+                                    let ext_hint = Some(ext);
+                                    SymphoniaDecoder::open_source(Box::new(source), ext_hint)
+                                }
+                                Err(e) => Err(e),
+                            }
                         } else {
-                            None
-                        };
-                        decoder = Some(dec);
-                        base_position = Duration::ZERO;
-                        src_frames_consumed = 0;
-                        frames_played.store(0, Ordering::SeqCst);
-                        reset_fade.store(true, Ordering::SeqCst);
-                        fade_target.store(true, Ordering::SeqCst);
-                        dsp.lock().unwrap().reset();
-                        ring.lock().unwrap().clear();
-                        if let Ok(mut tap) = spectrum_tap.try_lock() {
-                            tap.clear();
+                            Err(crate::error::LingfengError::other("本地流媒体缓存不可用"))
                         }
-                        playing.store(true, Ordering::Relaxed);
-                        let is_hi_res = sr >= 48_000;
-                        let _ = audio_tx.send(AudioEvent::Format(
-                            crate::audio::events::AudioFormatInfo {
-                                sample_rate: sr,
-                                channels: ch,
-                                device_rate,
-                                is_hi_res,
-                            },
-                        ));
-                        let _ = audio_tx.send(AudioEvent::Position(
-                            Duration::ZERO,
-                            dur.unwrap_or(Duration::ZERO),
-                        ));
+                    } else {
+                        download_state = None;
+                        let _ = audio_tx.send(AudioEvent::BufferProgress {
+                            buffered_bytes: 1,
+                            total_bytes: 1,
+                            ratio: 1.0,
+                        });
+                        let _ = audio_tx.send(AudioEvent::Buffering(false));
+                        SymphoniaDecoder::open(&track.path)
+                    };
+
+                    match open_res {
+                        Ok((dec, sr, ch, dur)) => {
+                            src_rate = sr;
+                            src_channels = ch;
+                            resampler = if sr != device_rate {
+                                RubatoResampler::new(sr, device_rate, ch as usize).ok()
+                            } else {
+                                None
+                            };
+                            decoder = Some(dec);
+                            base_position = Duration::ZERO;
+                            src_frames_consumed = 0;
+                            frames_played.store(0, Ordering::SeqCst);
+                            reset_fade.store(true, Ordering::SeqCst);
+                            fade_target.store(true, Ordering::SeqCst);
+                            dsp.lock().unwrap().reset();
+                            ring.lock().unwrap().clear();
+                            if let Ok(mut tap) = spectrum_tap.try_lock() {
+                                tap.clear();
+                            }
+                            playing.store(true, Ordering::Relaxed);
+                            let is_hi_res = sr >= 48_000;
+                            let _ = audio_tx.send(AudioEvent::Format(
+                                crate::audio::events::AudioFormatInfo {
+                                    sample_rate: sr,
+                                    channels: ch,
+                                    device_rate,
+                                    is_hi_res,
+                                },
+                            ));
+                            let _ = audio_tx.send(AudioEvent::Position(
+                                Duration::ZERO,
+                                dur.unwrap_or(Duration::ZERO),
+                            ));
+                        }
+                        Err(e) => {
+                            let _ = audio_tx.send(AudioEvent::Error(e.to_string()));
+                        }
                     }
-                    Err(e) => {
-                        let _ = audio_tx.send(AudioEvent::Error(e.to_string()));
-                    }
-                },
+                }
                 EngineCommand::Pause => {
                     fade_target.store(false, Ordering::SeqCst);
                     playing.store(false, Ordering::Relaxed);
@@ -557,6 +598,28 @@ fn decode_loop(
 
         if stop.load(Ordering::SeqCst) {
             break;
+        }
+
+        // 远端网络缓冲状态与下载进度上报 (每 200ms)
+        if let Some(ref state) = download_state {
+            let now = Instant::now();
+            if now.duration_since(last_buffer_report) >= Duration::from_millis(200) {
+                last_buffer_report = now;
+                let downloaded = state.downloaded_bytes.load(Ordering::Relaxed);
+                let total = state.total_bytes.load(Ordering::Relaxed);
+                let ratio = state.buffer_ratio();
+                let _ = audio_tx.send(AudioEvent::BufferProgress {
+                    buffered_bytes: downloaded,
+                    total_bytes: total,
+                    ratio,
+                });
+
+                let is_buffering = state.is_buffering.load(Ordering::Relaxed);
+                if is_buffering != last_buffering_state {
+                    last_buffering_state = is_buffering;
+                    let _ = audio_tx.send(AudioEvent::Buffering(is_buffering));
+                }
+            }
         }
 
         if !playing.load(Ordering::Relaxed) {

@@ -150,6 +150,56 @@ pub enum AppMessage {
     ExportPreset,
     /// 从外部 JSON 文件导入音效预设。
     ImportPreset,
+
+    // ── WebDAV 与云端流媒体 ──
+    /// 打开/聚焦/切换 WebDAV 管理控制台窗口。
+    ToggleWebDavWindow,
+    /// 关闭 WebDAV 控制台窗口。
+    CloseWebDavWindow,
+    /// 切换 WebDAV 控制台当前 Tab。
+    SwitchWebDavTab(WebDavTab),
+    /// 选择当前操作的 WebDAV 服务器。
+    SelectWebDavServer(usize),
+    /// 更新新建/编辑服务器表单字段。
+    SetWebDavFormName(String),
+    SetWebDavFormEndpoint(String),
+    SetWebDavFormUsername(String),
+    SetWebDavFormPassword(String),
+    SetWebDavFormAllowInsecure(bool),
+    /// 保存服务器配置。
+    SaveWebDavServer,
+    /// 删除指定下标的 WebDAV 服务器。
+    DeleteWebDavServer(usize),
+    /// 测试指定服务器连接。
+    TestWebDavConnection(usize),
+    /// 远端连接测试完成结果回传。
+    WebDavConnectionResult(usize, Result<Duration, String>),
+    /// 浏览指定远端路径。
+    ExploreWebDavDir(String),
+    /// 远端目录加载完成。
+    WebDavDirLoaded(Result<Vec<crate::webdav::RemoteItem>, String>),
+    /// 导入单个远端文件到播放列表。
+    ImportRemoteTrack(crate::webdav::RemoteItem),
+    /// 批量导入当前目录中全部音频文件。
+    ImportAllRemoteAudios,
+    /// 一键清空本地持久化磁盘缓存。
+    ClearDiskCache,
+    /// 磁盘缓存清理完成通知。
+    DiskCacheCleared(Result<u64, String>),
+    /// 设置最大缓存配额 (MB)。
+    SetCacheLimitMb(u64),
+}
+
+/// WebDAV 控制台 Tab 分页。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WebDavTab {
+    /// 服务器配置管理（默认）。
+    #[default]
+    Servers,
+    /// 云端文件浏览器。
+    Explorer,
+    /// 缓存与缓冲中心。
+    Cache,
 }
 
 /// 主界面主体 Tab（⑥区，T13）。

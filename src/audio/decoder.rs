@@ -30,13 +30,22 @@ pub struct SymphoniaDecoder {
 }
 
 impl SymphoniaDecoder {
-    /// 打开音频文件，返回 `(解码器, 采样率, 声道数, 时长)`。
+    /// 打开本地音频文件，返回 `(解码器, 采样率, 声道数, 时长)`。
     pub fn open(path: &Path) -> Result<(Self, u32, u16, Option<Duration>)> {
         let file = File::open(path).map_err(LingfengError::Io)?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let ext = path.extension().and_then(|e| e.to_str());
+        Self::open_source(Box::new(file), ext)
+    }
+
+    /// 打开任意实现了 `MediaSource` 的媒体流（支持网络边下边播流与缓存文件）。
+    pub fn open_source(
+        source: Box<dyn symphonia::core::io::MediaSource>,
+        ext_hint: Option<&str>,
+    ) -> Result<(Self, u32, u16, Option<Duration>)> {
+        let mss = MediaSourceStream::new(source, Default::default());
 
         let mut hint = Hint::new();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = ext_hint {
             hint.with_extension(ext);
         }
 

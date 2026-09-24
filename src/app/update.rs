@@ -330,6 +330,231 @@ impl crate::app::state::AppState {
                 }
                 Task::none()
             }
+            // ── WebDAV 与云端流媒体 ──
+            AppMessage::ToggleWebDavWindow => self.toggle_webdav_window(),
+            AppMessage::CloseWebDavWindow => self.close_webdav_window(),
+            AppMessage::SwitchWebDavTab(tab) => {
+                self.webdav_tab = tab;
+                if tab == crate::app::message::WebDavTab::Cache {
+                    if let Ok(mgr) = crate::cache::CacheManager::new() {
+                        self.cache_used_bytes = mgr.total_cache_size();
+                    }
+                    Task::none()
+                } else if tab == crate::app::message::WebDavTab::Explorer
+                    && self.webdav_remote_items.is_empty()
+                    && !self.settings.webdav_servers.is_empty()
+                {
+                    self.explore_webdav_dir(self.webdav_current_path.clone())
+                } else {
+                    Task::none()
+                }
+            }
+            AppMessage::SelectWebDavServer(idx) => {
+                if idx < self.settings.webdav_servers.len() {
+                    self.selected_webdav_server = idx;
+                    self.webdav_tab = crate::app::message::WebDavTab::Explorer;
+                    self.webdav_current_path = "/".to_string();
+                    self.explore_webdav_dir("/".to_string())
+                } else {
+                    Task::none()
+                }
+            }
+            AppMessage::SetWebDavFormName(s) => {
+                self.webdav_form_name = s;
+                Task::none()
+            }
+            AppMessage::SetWebDavFormEndpoint(s) => {
+                self.webdav_form_endpoint = s;
+                Task::none()
+            }
+            AppMessage::SetWebDavFormUsername(s) => {
+                self.webdav_form_username = s;
+                Task::none()
+            }
+            AppMessage::SetWebDavFormPassword(s) => {
+                self.webdav_form_password = s;
+                Task::none()
+            }
+            AppMessage::SetWebDavFormAllowInsecure(b) => {
+                self.webdav_form_allow_insecure = b;
+                Task::none()
+            }
+            AppMessage::SaveWebDavServer => {
+                if self.webdav_form_endpoint.trim().is_empty() {
+                    return Task::none();
+                }
+                let name = if self.webdav_form_name.trim().is_empty() {
+                    format!("WebDAV 服务器 {}", self.settings.webdav_servers.len() + 1)
+                } else {
+                    self.webdav_form_name.trim().to_string()
+                };
+                let id = format!(
+                    "srv_{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0)
+                );
+                let mut server = crate::webdav::WebDavServerConfig::new(
+                    id,
+                    name,
+                    self.webdav_form_endpoint.trim(),
+                    self.webdav_form_username.trim(),
+                    &self.webdav_form_password,
+                );
+                server.allow_insecure_cert = self.webdav_form_allow_insecure;
+                self.settings.webdav_servers.push(server);
+                self.save_settings();
+                self.webdav_form_name.clear();
+                self.webdav_form_endpoint.clear();
+                self.webdav_form_username.clear();
+                self.webdav_form_password.clear();
+                self.webdav_form_allow_insecure = false;
+                Task::none()
+            }
+            AppMessage::DeleteWebDavServer(idx) => {
+                if idx < self.settings.webdav_servers.len() {
+                    self.settings.webdav_servers.remove(idx);
+                    if self.selected_webdav_server >= self.settings.webdav_servers.len()
+                        && !self.settings.webdav_servers.is_empty()
+                    {
+                        self.selected_webdav_server = self.settings.webdav_servers.len() - 1;
+                    }
+                    self.webdav_remote_items.clear();
+                    self.save_settings();
+                }
+                Task::none()
+            }
+            AppMessage::TestWebDavConnection(idx) => {
+                if let Some(srv) = self.settings.webdav_servers.get(idx) {
+                    let srv_config = srv.clone();
+                    self.webdav_test_status = Some("正在连接测试中...".to_string());
+                    run_blocking_task(move || {
+                        let res = match crate::webdav::WebDavClient::new(&srv_config) {
+                            Ok(client) => client.test_connection().map_err(|e| e.to_string()),
+                            Err(e) => Err(e.to_string()),
+                        };
+                        AppMessage::WebDavConnectionResult(idx, res)
+                    })
+                } else {
+                    Task::none()
+                }
+            }
+            AppMessage::WebDavConnectionResult(idx, result) => {
+                if self.selected_webdav_server == idx {
+                    match result {
+                        Ok(latency) => {
+                            self.webdav_test_status =
+                                Some(format!("连接成功 (RTT: {}ms)", latency.as_millis()));
+                        }
+                        Err(e) => {
+                            self.webdav_test_status = Some(format!("连接失败: {e}"));
+                        }
+                    }
+                }
+                Task::none()
+            }
+            AppMessage::ExploreWebDavDir(path) => self.explore_webdav_dir(path),
+            AppMessage::WebDavDirLoaded(result) => {
+                self.webdav_is_loading = false;
+                match result {
+                    Ok(items) => {
+                        self.webdav_remote_items = items;
+                    }
+                    Err(e) => {
+                        self.last_error = Some(format!("读取远端目录失败: {e}"));
+                        self.webdav_remote_items.clear();
+                    }
+                }
+                Task::none()
+            }
+            AppMessage::ImportRemoteTrack(item) => {
+                if let Some(srv) = self
+                    .settings
+                    .webdav_servers
+                    .get(self.selected_webdav_server)
+                {
+                    let full_url = srv.build_url(&item.href);
+                    let mut track = crate::playlist::Track::from_path(PathBuf::from(&full_url));
+                    track.title = item.name.clone();
+                    if let Some(dot) = track.title.rfind('.') {
+                        track.title = track.title[..dot].to_string();
+                    }
+                    self.playlist.tracks.push(track);
+                    if self.playlist.current_index.is_none() {
+                        self.playlist.current_index = Some(0);
+                    }
+                    self.save_playlist();
+                }
+                Task::none()
+            }
+            AppMessage::ImportAllRemoteAudios => {
+                if let Some(srv) = self
+                    .settings
+                    .webdav_servers
+                    .get(self.selected_webdav_server)
+                {
+                    let mut added = false;
+                    for item in &self.webdav_remote_items {
+                        if item.is_audio_file() {
+                            let full_url = srv.build_url(&item.href);
+                            let mut track =
+                                crate::playlist::Track::from_path(PathBuf::from(&full_url));
+                            track.title = item.name.clone();
+                            if let Some(dot) = track.title.rfind('.') {
+                                track.title = track.title[..dot].to_string();
+                            }
+                            self.playlist.tracks.push(track);
+                            added = true;
+                        }
+                    }
+                    if added {
+                        if self.playlist.current_index.is_none() {
+                            self.playlist.current_index = Some(0);
+                        }
+                        self.save_playlist();
+                    }
+                }
+                Task::none()
+            }
+            AppMessage::ClearDiskCache => {
+                self.cache_status_msg = Some("正在清空磁盘缓存...".to_string());
+                run_blocking_task(move || {
+                    let res = match crate::cache::CacheManager::new() {
+                        Ok(mut mgr) => {
+                            let freed = mgr.total_cache_size();
+                            mgr.clear_all().map(|_| freed).map_err(|e| e.to_string())
+                        }
+                        Err(e) => Err(e.to_string()),
+                    };
+                    AppMessage::DiskCacheCleared(res)
+                })
+            }
+            AppMessage::DiskCacheCleared(res) => {
+                match res {
+                    Ok(freed_bytes) => {
+                        let freed_mb = freed_bytes as f64 / 1_048_576.0;
+                        self.cache_used_bytes = 0;
+                        self.cache_status_msg =
+                            Some(format!("已成功清空磁盘缓存，释放 {:.1} MB 空间", freed_mb));
+                    }
+                    Err(e) => {
+                        self.cache_status_msg = Some(format!("清空缓存失败: {e}"));
+                    }
+                }
+                Task::none()
+            }
+            AppMessage::SetCacheLimitMb(mb) => {
+                self.settings.cache_config.max_size_mb = mb;
+                self.save_settings();
+                let limit = mb;
+                run_blocking_task(move || {
+                    if let Ok(mut mgr) = crate::cache::CacheManager::new() {
+                        let _ = mgr.evict_if_needed(limit);
+                    }
+                    AppMessage::Noop
+                })
+            }
             AppMessage::Noop => Task::none(),
         }
     }
@@ -425,6 +650,16 @@ impl crate::app::state::AppState {
             AudioEvent::Error(e) => {
                 self.last_error = Some(e);
                 log::error!("音频错误: {}", self.last_error.as_deref().unwrap_or(""));
+            }
+            AudioEvent::Buffering(b) => {
+                self.is_buffering = b;
+            }
+            AudioEvent::BufferProgress {
+                buffered_bytes: _,
+                total_bytes: _,
+                ratio,
+            } => {
+                self.buffer_ratio = ratio.clamp(0.0, 1.0);
             }
         }
         Task::none()
@@ -565,6 +800,10 @@ impl crate::app::state::AppState {
             self.effects_window_id = None;
             return window::close(id);
         }
+        if self.webdav_window_id == Some(id) {
+            self.webdav_window_id = None;
+            return window::close(id);
+        }
         // 主窗口关闭请求：最小化到托盘（隐藏）或直接退出进程
         self.main_window_id = Some(id);
         if self.settings.close_to_tray {
@@ -681,6 +920,85 @@ impl crate::app::state::AppState {
         }
         Task::none()
     }
+
+    // ── WebDAV 控制台辅助 ──
+
+    fn toggle_webdav_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.webdav_window_id {
+            self.webdav_window_id = None;
+            window::close(id)
+        } else {
+            self.open_webdav_window()
+        }
+    }
+
+    fn open_webdav_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.webdav_window_id {
+            return Task::batch([
+                window::set_mode(id, window::Mode::Windowed),
+                window::gain_focus(id),
+            ]);
+        }
+        if let Ok(mgr) = crate::cache::CacheManager::new() {
+            self.cache_used_bytes = mgr.total_cache_size();
+        }
+        let (id, task) = window::open(window::Settings {
+            size: iced::Size::new(620.0, 480.0),
+            min_size: Some(iced::Size::new(540.0, 400.0)),
+            resizable: true,
+            decorations: true,
+            exit_on_close_request: false,
+            ..Default::default()
+        });
+        self.webdav_window_id = Some(id);
+        let mut tasks = vec![task.map(|_| AppMessage::Noop), window::gain_focus(id)];
+        if !self.settings.webdav_servers.is_empty() && self.webdav_remote_items.is_empty() {
+            tasks.push(self.explore_webdav_dir("/".to_string()));
+        }
+        Task::batch(tasks)
+    }
+
+    fn close_webdav_window(&mut self) -> Task<AppMessage> {
+        if let Some(id) = self.webdav_window_id.take() {
+            window::close(id)
+        } else {
+            Task::none()
+        }
+    }
+
+    fn explore_webdav_dir(&mut self, path: String) -> Task<AppMessage> {
+        if let Some(srv) = self
+            .settings
+            .webdav_servers
+            .get(self.selected_webdav_server)
+        {
+            let srv_config = srv.clone();
+            self.webdav_current_path = path.clone();
+            self.webdav_is_loading = true;
+            self.webdav_remote_items.clear();
+            run_blocking_task(move || {
+                let res = match crate::webdav::WebDavClient::new(&srv_config) {
+                    Ok(client) => client.list_dir(&path).map_err(|e| e.to_string()),
+                    Err(e) => Err(e.to_string()),
+                };
+                AppMessage::WebDavDirLoaded(res)
+            })
+        } else {
+            Task::none()
+        }
+    }
+}
+
+/// 在独立 OS 线程中运行阻塞式任务，并通过 oneshot 通道异步回传 AppMessage。
+fn run_blocking_task(f: impl FnOnce() -> AppMessage + Send + 'static) -> Task<AppMessage> {
+    let (tx, rx) = iced::futures::channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let res = f();
+        let _ = tx.send(res);
+    });
+    Task::perform(async move { rx.await.unwrap_or(AppMessage::Noop) }, |msg| {
+        msg
+    })
 }
 
 /// 递归收集目录下所有音频文件。
@@ -892,5 +1210,168 @@ mod tests {
         let _ = state.update(AppMessage::DeletePreset(custom_id));
         assert_eq!(state.custom_presets.len(), 0);
         assert_eq!(state.active_preset_id, "builtin_flat");
+    }
+
+    #[test]
+    fn webdav_window_open_toggle_close_lifecycle() {
+        let mut state = AppState::default();
+        assert!(state.webdav_window_id.is_none());
+
+        // 1. 打开 WebDAV 控制台
+        let _ = state.update(AppMessage::ToggleWebDavWindow);
+        assert!(state.webdav_window_id.is_some());
+        let _dav_id = state.webdav_window_id.unwrap();
+
+        // 2. Toggle 关闭
+        let _ = state.update(AppMessage::ToggleWebDavWindow);
+        assert!(state.webdav_window_id.is_none());
+
+        // 3. 再次打开并通过 WindowClose 关闭
+        let _ = state.update(AppMessage::ToggleWebDavWindow);
+        assert!(state.webdav_window_id.is_some());
+        let new_dav_id = state.webdav_window_id.unwrap();
+        let _ = state.update(AppMessage::WindowClose(new_dav_id));
+        assert!(state.webdav_window_id.is_none());
+    }
+
+    #[test]
+    fn webdav_server_config_management() {
+        let mut state = AppState::default();
+        state.settings.webdav_servers.clear();
+
+        // 1. 填写表单
+        let _ = state.update(AppMessage::SetWebDavFormName("我的群晖 NAS".to_string()));
+        let _ = state.update(AppMessage::SetWebDavFormEndpoint(
+            "http://192.168.1.100:5005/music".to_string(),
+        ));
+        let _ = state.update(AppMessage::SetWebDavFormUsername("admin".to_string()));
+        let _ = state.update(AppMessage::SetWebDavFormPassword("secret123".to_string()));
+        let _ = state.update(AppMessage::SetWebDavFormAllowInsecure(true));
+
+        assert_eq!(state.webdav_form_name, "我的群晖 NAS");
+        assert_eq!(
+            state.webdav_form_endpoint,
+            "http://192.168.1.100:5005/music"
+        );
+        assert!(state.webdav_form_allow_insecure);
+
+        // 2. 保存服务器
+        let _ = state.update(AppMessage::SaveWebDavServer);
+        assert_eq!(state.settings.webdav_servers.len(), 1);
+        let srv = &state.settings.webdav_servers[0];
+        assert_eq!(srv.name, "我的群晖 NAS");
+        assert_eq!(srv.endpoint, "http://192.168.1.100:5005/music");
+        assert_eq!(srv.username, "admin");
+        assert_eq!(srv.get_password(), "secret123");
+        assert!(srv.allow_insecure_cert);
+
+        // 表单已被重置
+        assert!(state.webdav_form_name.is_empty());
+        assert!(state.webdav_form_endpoint.is_empty());
+
+        // 3. 删除服务器
+        let _ = state.update(AppMessage::DeleteWebDavServer(0));
+        assert_eq!(state.settings.webdav_servers.len(), 0);
+    }
+
+    #[test]
+    fn webdav_remote_tracks_import_and_buffering() {
+        let mut state = AppState::default();
+        state.settings.webdav_servers.clear();
+        state.playlist.clear();
+
+        let srv = crate::webdav::WebDavServerConfig::new(
+            "srv_1",
+            "测试云盘",
+            "http://alist.local:5244/dav",
+            "guest",
+            "guest",
+        );
+        state.settings.webdav_servers.push(srv);
+        state.selected_webdav_server = 0;
+
+        // 1. 单曲导入
+        let item1 = crate::webdav::RemoteItem {
+            name: "晴天.flac".to_string(),
+            href: "/dav/Jay/晴天.flac".to_string(),
+            is_dir: false,
+            size: 25_000_000,
+            last_modified: None,
+        };
+        let _ = state.update(AppMessage::ImportRemoteTrack(item1));
+        assert_eq!(state.playlist.tracks.len(), 1);
+        let t1 = &state.playlist.tracks[0];
+        assert_eq!(t1.title, "晴天");
+        assert!(t1.is_remote());
+        assert_eq!(
+            t1.path.to_string_lossy(),
+            "http://alist.local:5244/dav/Jay/晴天.flac"
+        );
+
+        // 2. 批量导入
+        state.webdav_remote_items = vec![
+            crate::webdav::RemoteItem {
+                name: "子目录".to_string(),
+                href: "/dav/Jay/sub/".to_string(),
+                is_dir: true,
+                size: 0,
+                last_modified: None,
+            },
+            crate::webdav::RemoteItem {
+                name: "七里香.mp3".to_string(),
+                href: "/dav/Jay/七里香.mp3".to_string(),
+                is_dir: false,
+                size: 8_000_000,
+                last_modified: None,
+            },
+            crate::webdav::RemoteItem {
+                name: "歌词.lrc".to_string(),
+                href: "/dav/Jay/七里香.lrc".to_string(),
+                is_dir: false,
+                size: 1_200,
+                last_modified: None,
+            },
+        ];
+        let _ = state.update(AppMessage::ImportAllRemoteAudios);
+        // 只有七里香.mp3 被追加（子目录和歌词被过滤）
+        assert_eq!(state.playlist.tracks.len(), 2);
+        assert_eq!(state.playlist.tracks[1].title, "七里香");
+        assert!(state.playlist.tracks[1].is_remote());
+
+        // 3. 缓冲进度与卡顿状态事件
+        let _ = state.update(AppMessage::AudioEvent(crate::audio::AudioEvent::Buffering(
+            true,
+        )));
+        assert!(state.is_buffering);
+
+        let _ = state.update(AppMessage::AudioEvent(
+            crate::audio::AudioEvent::BufferProgress {
+                buffered_bytes: 5_000_000,
+                total_bytes: 8_000_000,
+                ratio: 0.625,
+            },
+        ));
+        assert_eq!(state.buffer_ratio, 0.625);
+
+        let _ = state.update(AppMessage::AudioEvent(crate::audio::AudioEvent::Buffering(
+            false,
+        )));
+        assert!(!state.is_buffering);
+    }
+
+    #[test]
+    fn cache_quota_and_status_message() {
+        let mut state = AppState::default();
+
+        let _ = state.update(AppMessage::SetCacheLimitMb(4096));
+        assert_eq!(state.settings.cache_config.max_size_mb, 4096);
+
+        let _ = state.update(AppMessage::DiskCacheCleared(Ok(1048576 * 50)));
+        assert_eq!(state.cache_used_bytes, 0);
+        assert!(state
+            .cache_status_msg
+            .as_deref()
+            .unwrap()
+            .contains("50.0 MB"));
     }
 }

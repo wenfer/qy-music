@@ -31,14 +31,34 @@ pub fn progress_row(state: &AppState) -> Element<'_, AppMessage> {
     let total_secs = dur.as_secs_f32().max(0.0);
     let palette = Palette::from_skin(&state.skin);
 
-    let cur_time = text(format_duration(pos))
-        .size(11.0)
+    let cur_time_str = if state.is_buffering {
+        format!("{} (缓冲中)", format_duration(pos))
+    } else {
+        format_duration(pos)
+    };
+
+    let cur_time = text(cur_time_str)
+        .size(10.5)
         .style(move |_theme: &iced::Theme| text::Style {
-            color: Some(palette.text_muted),
+            color: Some(if state.is_buffering {
+                palette.accent
+            } else {
+                palette.text_muted
+            }),
         });
 
-    let total_time = text(format_duration(dur))
-        .size(11.0)
+    let total_time_str = if state.buffer_ratio < 0.999 && state.buffer_ratio > 0.001 {
+        format!(
+            "{} [{:.0}%]",
+            format_duration(dur),
+            state.buffer_ratio * 100.0
+        )
+    } else {
+        format_duration(dur)
+    };
+
+    let total_time = text(total_time_str)
+        .size(10.5)
         .style(move |_theme: &iced::Theme| text::Style {
             color: Some(palette.text_muted),
         });
@@ -50,7 +70,29 @@ pub fn progress_row(state: &AppState) -> Element<'_, AppMessage> {
     .width(Length::Fill)
     .style(hifi_slider_style(palette));
 
-    row![cur_time, seek_slider, total_time]
+    let progress_widget: Element<'_, AppMessage> = if state.buffer_ratio < 0.999 {
+        // 双层复合进度条：底层显示网络下载缓冲条，顶层显示播放拖拽滑块
+        let buffer_bar = progress_bar(0.0..=1.0, state.buffer_ratio)
+            .length(Length::Fill)
+            .style(move |_theme: &iced::Theme| progress_bar::Style {
+                background: iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.04)),
+                bar: iced::Background::Color(palette.accent_subtle),
+                border: iced::Border::default().rounded(2.0),
+            });
+
+        iced::widget::stack![
+            container(buffer_bar)
+                .height(Length::Fixed(16.0))
+                .align_y(iced::alignment::Vertical::Center),
+            seek_slider,
+        ]
+        .width(Length::Fill)
+        .into()
+    } else {
+        seek_slider.into()
+    };
+
+    row![cur_time, progress_widget, total_time]
         .spacing(8)
         .align_y(iced::alignment::Vertical::Center)
         .width(Length::Fill)

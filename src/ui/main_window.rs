@@ -200,6 +200,11 @@ fn build_tab_body(state: &AppState) -> Element<'_, AppMessage> {
     // 右侧与当前激活 Tab 一致的快捷操作栏
     let action_bar = match state.main_tab {
         MainTab::Playlist => {
+            let webdav_btn = button(text("☁ 云端").size(10.5))
+                .padding([2, 6])
+                .style(subtle_button_style(palette))
+                .on_press(AppMessage::ToggleWebDavWindow);
+
             let add_folder_btn = button(text("＋ 文件夹").size(10.5))
                 .padding([2, 6])
                 .style(subtle_button_style(palette))
@@ -215,7 +220,7 @@ fn build_tab_body(state: &AppState) -> Element<'_, AppMessage> {
                 .style(subtle_button_style(palette))
                 .on_press(AppMessage::ClearPlaylist);
 
-            row![add_folder_btn, add_file_btn, clear_btn].spacing(4)
+            row![webdav_btn, add_folder_btn, add_file_btn, clear_btn].spacing(4)
         }
         MainTab::Lyrics => {
             let load_btn = button(text("加载").size(10.5))

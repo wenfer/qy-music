@@ -64,6 +64,12 @@ pub struct Settings {
     /// 当前激活的音效预设 ID。
     #[serde(default = "default_active_preset_id")]
     pub active_preset_id: String,
+    /// WebDAV 服务器配置列表。
+    #[serde(default)]
+    pub webdav_servers: Vec<crate::webdav::WebDavServerConfig>,
+    /// 流媒体持久化磁盘缓存配置。
+    #[serde(default)]
+    pub cache_config: crate::cache::CacheConfig,
 }
 
 /// `window_size` 的 serde 默认值函数。
@@ -91,6 +97,8 @@ impl Default for Settings {
             effects: crate::audio::AudioEffects::default(),
             custom_presets: Vec::new(),
             active_preset_id: default_active_preset_id(),
+            webdav_servers: Vec::new(),
+            cache_config: crate::cache::CacheConfig::default(),
         }
     }
 }
@@ -185,6 +193,18 @@ mod tests {
             },
             custom_presets: Vec::new(),
             active_preset_id: "builtin_rock".to_string(),
+            webdav_servers: vec![crate::webdav::WebDavServerConfig::new(
+                "srv1",
+                "MyNAS",
+                "http://nas:5005",
+                "admin",
+                "pwd",
+            )],
+            cache_config: crate::cache::CacheConfig {
+                enabled: true,
+                max_size_mb: 4096,
+                prefetch_kb: 1024,
+            },
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
